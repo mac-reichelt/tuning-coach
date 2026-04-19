@@ -1,6 +1,6 @@
 # ADR 0001: Sidecar Storage Schema (SQLite)
 
-- Status: proposed
+- Status: accepted
 - Date: 2025-11-15
 - Deciders: @mac-reichelt
 - Issue: [#8](https://github.com/mac-reichelt/tuning-coach/issues/8)

@@ -34,3 +34,12 @@ folder, then enable it from SimHub's overlay manager.
 
 With Forza on the track and the sidecar running, the overlay should show
 "connected" and report incoming telemetry packet rate (~60 Hz).
+
+## Back up your local data
+
+The sidecar stores SQLite data at `<data_dir>/tuning-coach.db` (default:
+`./data/tuning-coach.db` when started from `sidecar/`).
+
+To make a backup, stop the sidecar, then copy `tuning-coach.db` to a safe
+location. If you back up while the sidecar is running, copy
+`tuning-coach.db`, `tuning-coach.db-wal`, and `tuning-coach.db-shm` together.
