@@ -387,9 +387,10 @@ impl PacketStats {
 
 macro_rules! read_unaligned_field {
     ($ptr:expr, $field:ident) => {
-        // SAFETY: `$ptr` points to a valid packet value cast from a correctly sized byte slice.
-        // Packet structs are `repr(C, packed)` so fields can be unaligned and must be read
-        // with `read_unaligned`.
+        // SAFETY: `$ptr` comes from a reference returned by `bytemuck::try_from_bytes` for a
+        // `Pod` type, so the pointed-to bytes have a valid bit pattern for the destination type.
+        // Packet structs are `repr(C, packed)`, so fields can be unaligned and must be read with
+        // `read_unaligned`.
         unsafe { std::ptr::addr_of!((*$ptr).$field).read_unaligned() }
     };
 }
