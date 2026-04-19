@@ -37,6 +37,7 @@ use tower_http::{
 use tracing::{error, info, info_span};
 use tracing_subscriber::EnvFilter;
 
+mod storage;
 mod telemetry;
 
 const SCHEMA_VERSION: u16 = 1;
@@ -117,6 +118,7 @@ impl AppConfig {
 
 #[derive(Clone)]
 struct AppState {
+    _storage: storage::Storage,
     active_ws_connections: Arc<AtomicUsize>,
     ws_connections_tx: watch::Sender<usize>,
     latest_telemetry_tx: watch::Sender<Option<telemetry::TelemetryPacket>>,
@@ -230,11 +232,18 @@ fn init_tracing(config: &AppConfig) -> anyhow::Result<()> {
 }
 
 async fn run_server(config: AppConfig) -> anyhow::Result<()> {
+    let storage = storage::Storage::open(&config.data_dir).with_context(|| {
+        format!(
+            "failed to initialize sqlite storage at {:?}",
+            config.data_dir
+        )
+    })?;
     let request_counter = Arc::new(AtomicU64::new(1));
     let (shutdown_tx, _) = broadcast::channel(16);
     let (ws_connections_tx, _) = watch::channel(0usize);
     let (latest_telemetry_tx, _) = watch::channel(None);
     let state = AppState {
+        _storage: storage,
         active_ws_connections: Arc::new(AtomicUsize::new(0)),
         ws_connections_tx,
         latest_telemetry_tx,
