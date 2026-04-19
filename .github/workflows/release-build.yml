@@ -52,7 +52,7 @@ jobs:
           cp "$src" "../dist/${{ matrix.artifact }}"
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/${{ matrix.artifact }}
           tag_name: ${{ github.event.release.tag_name }}
@@ -71,7 +71,7 @@ jobs:
           (cd overlay && zip -r ../dist/tuning-coach-overlay.zip .)
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/tuning-coach-overlay.tar.gz
