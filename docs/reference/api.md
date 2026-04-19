@@ -1,6 +1,6 @@
 # Sidecar WebSocket API
 
-> **Status:** v1 contract proposed in [ADR-0002](../adr/0002-sidecar-websocket-api.md).
+> **Status:** v1 contract proposed in [ADR-0002](../adr/0002-ws-api-contract.md).
 > This page is a user-facing summary of the same contract; the ADR is the
 > source of truth.
 
@@ -37,7 +37,7 @@ ws.onopen = () => ws.send(JSON.stringify({
 |---------------|---------------------------|-------------------------------------|
 | URL           | `ws://127.0.0.1:38920/ws` | config `ws.bind`, env `TUNING_COACH_WS_BIND` |
 | Bind address  | `127.0.0.1` (loopback)    | set `ws.bind` to `0.0.0.0` (logs a warning) |
-| Subprotocol   | `tuning-coach.v1`         | required — handshake fails without it |
+| Subprotocol   | `tuning-coach.v1`         | optional in current implementation |
 | Encoding      | UTF-8 JSON, text frames   | (CBOR deferred to a future ADR)     |
 | Auth          | none                      | local-only by design                |
 
@@ -80,22 +80,13 @@ bumps `schema_version`.
 
 ```json
 {
-  "type": "hello", "schema_version": 1, "t_ms": 1738012345678,
-  "data": {
-    "sidecar_version": "0.1.0",
-    "client_id": "01HQ...",
-    "server_time_ms": 1738012345678,
-    "telemetry_default_hz": 10,
-    "telemetry_max_hz": 60,
-    "supported_event_types": ["telemetry", "recommendation", "lap_completed",
-                              "session_started", "session_ended", "pong", "error"]
-  }
+  "type": "hello",
+  "schema_version": 1,
+  "sidecar_version": "0.1.0"
 }
 ```
 
-> **Note:** `"hello"` is intentionally absent from `supported_event_types`.
-> It is sent unconditionally as the first frame on every connection and is not
-> a subscribeable event type.
+It is always sent as the first frame right after the WebSocket upgrade.
 
 ### `telemetry`
 
@@ -331,3 +322,13 @@ The server binds to `127.0.0.1` by default and has no authentication.
 Binding to `0.0.0.0` is opt-in via config and emits a warning log on every
 accepted upgrade. Do not expose the sidecar to a non-trusted network until a
 future ADR introduces auth.
+
+## Test hooks (development/integration tests)
+
+For integration testing, the sidecar exposes:
+
+- `POST /test/telemetry` with body `{ "data": { ... } }`
+- `POST /test/recommendation` with body `{ "data": { ... } }`
+
+These routes inject events directly into the same WS fan-out path used by
+live producers.

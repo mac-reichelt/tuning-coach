@@ -5,16 +5,17 @@ use std::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
         Arc,
     },
+    time::{Duration, Instant},
 };
 
 use anyhow::Context;
 use axum::{
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
+        ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade},
         State,
     },
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use clap::Parser;
@@ -23,9 +24,11 @@ use figment::{
     Figment,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::{
     net::TcpListener,
     sync::{broadcast, watch},
+    time::{interval, MissedTickBehavior},
 };
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -33,6 +36,12 @@ use tower_http::{
 };
 use tracing::{error, info, info_span};
 use tracing_subscriber::EnvFilter;
+
+const SCHEMA_VERSION: u16 = 1;
+const DEFAULT_TELEMETRY_HZ: u16 = 10;
+const MAX_TELEMETRY_HZ: u16 = 60;
+const PING_INTERVAL: Duration = Duration::from_secs(30);
+const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Parser)]
 #[command(name = "tuning-coach-sidecar", version)]
@@ -47,6 +56,7 @@ struct Cli {
 struct AppConfig {
     udp_listen_port: u16,
     ws_listen_port: u16,
+    telemetry_hz: u16,
     bind_address: IpAddr,
     data_dir: PathBuf,
     log_level: String,
@@ -57,6 +67,7 @@ impl Default for AppConfig {
         Self {
             udp_listen_port: 7777,
             ws_listen_port: 7778,
+            telemetry_hz: DEFAULT_TELEMETRY_HZ,
             bind_address: IpAddr::V4(Ipv4Addr::LOCALHOST),
             data_dir: PathBuf::from("./data"),
             log_level: "info".to_string(),
@@ -93,6 +104,11 @@ impl AppConfig {
         if self.data_dir.as_os_str().is_empty() {
             return Err(Box::new(figment::Error::from("data_dir cannot be empty")));
         }
+        if !(1..=MAX_TELEMETRY_HZ).contains(&self.telemetry_hz) {
+            return Err(Box::new(figment::Error::from(format!(
+                "telemetry_hz must be in 1..={MAX_TELEMETRY_HZ}"
+            ))));
+        }
         Ok(())
     }
 }
@@ -102,6 +118,19 @@ struct AppState {
     active_ws_connections: Arc<AtomicUsize>,
     ws_connections_tx: watch::Sender<usize>,
     shutdown_tx: broadcast::Sender<()>,
+    telemetry_tx: watch::Sender<Value>,
+    recommendation_tx: broadcast::Sender<Value>,
+    telemetry_hz: u16,
+}
+
+impl AppState {
+    fn emit_telemetry(&self, payload: Value) {
+        let _ = self.telemetry_tx.send(payload);
+    }
+
+    fn emit_recommendation(&self, payload: Value) {
+        let _ = self.recommendation_tx.send(payload);
+    }
 }
 
 struct WsConnectionGuard {
@@ -135,7 +164,30 @@ struct HealthResponse {
 #[derive(Serialize)]
 struct HelloMessage<'a> {
     r#type: &'static str,
-    version: &'a str,
+    schema_version: u16,
+    sidecar_version: &'a str,
+}
+
+#[derive(Serialize)]
+struct EventMessage<'a> {
+    r#type: &'a str,
+    schema_version: u16,
+    data: &'a Value,
+}
+
+#[derive(Deserialize)]
+struct ClientEnvelope {
+    schema_version: Option<u16>,
+}
+
+#[derive(Deserialize)]
+struct InjectEventRequest {
+    data: Value,
+}
+
+#[derive(Serialize)]
+struct InjectEventResponse {
+    emitted: &'static str,
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -182,11 +234,16 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         active_ws_connections: Arc::new(AtomicUsize::new(0)),
         ws_connections_tx,
         shutdown_tx,
+        telemetry_tx: watch::channel(Value::Null).0,
+        recommendation_tx: broadcast::channel(256).0,
+        telemetry_hz: config.telemetry_hz,
     };
 
     let app = Router::new()
         .route("/health", get(health))
         .route("/ws", get(ws_handler))
+        .route("/test/telemetry", post(test_emit_telemetry))
+        .route("/test/recommendation", post(test_emit_recommendation))
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http().make_span_with(
             move |request: &axum::http::Request<_>| {
@@ -242,9 +299,11 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl
 async fn ws_connection_loop(mut socket: WebSocket, state: AppState) {
     let _guard = WsConnectionGuard::new(&state);
     let mut shutdown_rx = state.shutdown_tx.subscribe();
+    let mut recommendation_rx = state.recommendation_tx.subscribe();
     let hello = HelloMessage {
         r#type: "hello",
-        version: env!("CARGO_PKG_VERSION"),
+        schema_version: SCHEMA_VERSION,
+        sidecar_version: env!("CARGO_PKG_VERSION"),
     };
     match serde_json::to_string(&hello) {
         Ok(payload) => {
@@ -258,22 +317,129 @@ async fn ws_connection_loop(mut socket: WebSocket, state: AppState) {
         }
     }
 
+    let mut telemetry_interval = interval(Duration::from_millis(
+        (1000_u64 / u64::from(state.telemetry_hz.max(1))).max(1),
+    ));
+    telemetry_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    let mut ping_interval = interval(PING_INTERVAL);
+    ping_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    let mut idle_check_interval = interval(Duration::from_secs(5));
+    idle_check_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    let telemetry_rx = state.telemetry_tx.subscribe();
+    let mut last_client_activity = Instant::now();
+
     loop {
         tokio::select! {
             ws_msg = socket.recv() => {
                 match ws_msg {
                     Some(Ok(Message::Close(_))) | None => break,
-                    Some(Ok(_)) => {}
+                    Some(Ok(Message::Text(payload))) => {
+                        last_client_activity = Instant::now();
+                        if let Some(version) = extract_schema_version(&payload) {
+                            if version != SCHEMA_VERSION {
+                                send_close(&mut socket, 4001, format!("schema_version mismatch: server={SCHEMA_VERSION} client={version}")).await;
+                                break;
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Ping(payload))) => {
+                        last_client_activity = Instant::now();
+                        if socket.send(Message::Pong(payload)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(Ok(Message::Pong(_))) => {
+                        last_client_activity = Instant::now();
+                    }
+                    Some(Ok(_)) => {
+                        last_client_activity = Instant::now();
+                    }
                     Some(Err(err)) => {
                         error!(module = module_path!(), %err, "websocket receive error");
                         break;
                     }
                 }
             }
+            _ = telemetry_interval.tick() => {
+                let telemetry_payload = telemetry_rx.borrow().clone();
+                if !telemetry_payload.is_null() && send_event(&mut socket, "telemetry", &telemetry_payload).await.is_err() {
+                    break;
+                }
+            }
+            recommendation = recommendation_rx.recv() => {
+                match recommendation {
+                    Ok(payload) => {
+                        if send_event(&mut socket, "recommendation", &payload).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            _ = ping_interval.tick() => {
+                if socket.send(Message::Ping(Vec::new().into())).await.is_err() {
+                    break;
+                }
+            }
+            _ = idle_check_interval.tick() => {
+                if last_client_activity.elapsed() >= IDLE_TIMEOUT {
+                    send_close(&mut socket, 1011, "idle timeout".to_string()).await;
+                    break;
+                }
+            }
             _ = shutdown_rx.recv() => break,
         }
     }
     let _ = socket.send(Message::Close(None)).await;
+}
+
+fn extract_schema_version(payload: &str) -> Option<u16> {
+    serde_json::from_str::<ClientEnvelope>(payload)
+        .ok()
+        .and_then(|message| message.schema_version)
+}
+
+async fn send_event(socket: &mut WebSocket, message_type: &str, payload: &Value) -> Result<(), ()> {
+    let message = EventMessage {
+        r#type: message_type,
+        schema_version: SCHEMA_VERSION,
+        data: payload,
+    };
+    let serialized = serde_json::to_string(&message).map_err(|_| ())?;
+    socket
+        .send(Message::Text(serialized.into()))
+        .await
+        .map_err(|_| ())
+}
+
+async fn send_close(socket: &mut WebSocket, code: u16, reason: String) {
+    let _ = socket
+        .send(Message::Close(Some(CloseFrame {
+            code,
+            reason: reason.into(),
+        })))
+        .await;
+}
+
+async fn test_emit_telemetry(
+    State(state): State<AppState>,
+    Json(request): Json<InjectEventRequest>,
+) -> impl IntoResponse {
+    state.emit_telemetry(request.data);
+    Json(InjectEventResponse {
+        emitted: "telemetry",
+    })
+}
+
+async fn test_emit_recommendation(
+    State(state): State<AppState>,
+    Json(request): Json<InjectEventRequest>,
+) -> impl IntoResponse {
+    state.emit_recommendation(request.data);
+    Json(InjectEventResponse {
+        emitted: "recommendation",
+    })
 }
 
 async fn shutdown_signal(state: AppState) {
@@ -317,8 +483,11 @@ async fn shutdown_signal(state: AppState) {
 #[cfg(test)]
 mod tests {
     use super::AppConfig;
+    use serde_json::json;
     use serial_test::serial;
     use temp_env::with_var;
+
+    use super::{EventMessage, HelloMessage, SCHEMA_VERSION};
 
     #[test]
     #[serial]
@@ -342,5 +511,42 @@ mod tests {
             let result = AppConfig::from_sources(None, true);
             assert!(result.is_err());
         });
+    }
+
+    #[test]
+    fn hello_message_serialization_contains_schema_version() {
+        let hello = HelloMessage {
+            r#type: "hello",
+            schema_version: SCHEMA_VERSION,
+            sidecar_version: "0.1.0",
+        };
+        let serialized = serde_json::to_value(hello).expect("serialize hello");
+        assert_eq!(
+            serialized,
+            json!({
+                "type": "hello",
+                "schema_version": 1,
+                "sidecar_version": "0.1.0"
+            })
+        );
+    }
+
+    #[test]
+    fn event_message_serialization_contains_envelope() {
+        let payload = json!({ "speed_kph": 123.4 });
+        let event = EventMessage {
+            r#type: "telemetry",
+            schema_version: SCHEMA_VERSION,
+            data: &payload,
+        };
+        let serialized = serde_json::to_value(event).expect("serialize event");
+        assert_eq!(
+            serialized,
+            json!({
+                "type": "telemetry",
+                "schema_version": 1,
+                "data": { "speed_kph": 123.4 }
+            })
+        );
     }
 }
