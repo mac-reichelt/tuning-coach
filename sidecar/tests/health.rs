@@ -21,7 +21,7 @@ async fn sidecar_health_endpoint_returns_ok() {
         match client.get(&health_url).send().await {
             Ok(response) => break response,
             Err(err) if Instant::now() < deadline => {
-                let _ = err;
+                eprintln!("health endpoint not ready yet: {err}");
                 sleep(Duration::from_millis(100)).await;
             }
             Err(err) => panic!("health endpoint never became available: {err}"),
@@ -32,8 +32,10 @@ async fn sidecar_health_endpoint_returns_ok() {
     let body: serde_json::Value = response.json().await.expect("health JSON body");
     assert_eq!(body, serde_json::json!({ "status": "ok" }));
 
-    let _ = child.kill();
-    let _ = child.wait();
+    if let Err(err) = child.kill() {
+        eprintln!("failed to kill sidecar process: {err}");
+    }
+    child.wait().expect("sidecar process should exit");
 }
 
 fn find_free_port() -> u16 {
