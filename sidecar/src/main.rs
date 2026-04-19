@@ -1,5 +1,5 @@
 use std::{
-    net::SocketAddr,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
@@ -25,8 +25,7 @@ use figment::{
 use serde::{Deserialize, Serialize};
 use tokio::{
     net::TcpListener,
-    sync::{broadcast, Notify},
-    time::{sleep, Duration},
+    sync::{broadcast, watch},
 };
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -48,6 +47,7 @@ struct Cli {
 struct AppConfig {
     udp_listen_port: u16,
     ws_listen_port: u16,
+    bind_address: IpAddr,
     data_dir: PathBuf,
     log_level: String,
 }
@@ -57,6 +57,7 @@ impl Default for AppConfig {
         Self {
             udp_listen_port: 7777,
             ws_listen_port: 7778,
+            bind_address: IpAddr::V4(Ipv4Addr::LOCALHOST),
             data_dir: PathBuf::from("./data"),
             log_level: "info".to_string(),
         }
@@ -99,30 +100,30 @@ impl AppConfig {
 #[derive(Clone)]
 struct AppState {
     active_ws_connections: Arc<AtomicUsize>,
-    ws_drain_notify: Arc<Notify>,
+    ws_connections_tx: watch::Sender<usize>,
     shutdown_tx: broadcast::Sender<()>,
 }
 
 struct WsConnectionGuard {
     active_ws_connections: Arc<AtomicUsize>,
-    ws_drain_notify: Arc<Notify>,
+    ws_connections_tx: watch::Sender<usize>,
 }
 
 impl WsConnectionGuard {
     fn new(state: &AppState) -> Self {
-        state.active_ws_connections.fetch_add(1, Ordering::SeqCst);
+        let active = state.active_ws_connections.fetch_add(1, Ordering::SeqCst) + 1;
+        let _ = state.ws_connections_tx.send(active);
         Self {
             active_ws_connections: Arc::clone(&state.active_ws_connections),
-            ws_drain_notify: Arc::clone(&state.ws_drain_notify),
+            ws_connections_tx: state.ws_connections_tx.clone(),
         }
     }
 }
 
 impl Drop for WsConnectionGuard {
     fn drop(&mut self) {
-        if self.active_ws_connections.fetch_sub(1, Ordering::SeqCst) == 1 {
-            self.ws_drain_notify.notify_waiters();
-        }
+        let active = self.active_ws_connections.fetch_sub(1, Ordering::SeqCst) - 1;
+        let _ = self.ws_connections_tx.send(active);
     }
 }
 
@@ -158,9 +159,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn init_tracing(config: &AppConfig) -> anyhow::Result<()> {
-    let env_filter = EnvFilter::try_new(&config.log_level)
-        .or_else(|_| EnvFilter::try_new("info"))
-        .context("invalid log level")?;
+    let env_filter = EnvFilter::try_new(&config.log_level).context("invalid log level")?;
 
     let fmt_layer = tracing_subscriber::fmt()
         .with_env_filter(env_filter)
@@ -178,9 +177,10 @@ fn init_tracing(config: &AppConfig) -> anyhow::Result<()> {
 async fn run_server(config: AppConfig) -> anyhow::Result<()> {
     let request_counter = Arc::new(AtomicU64::new(1));
     let (shutdown_tx, _) = broadcast::channel(16);
+    let (ws_connections_tx, _) = watch::channel(0usize);
     let state = AppState {
         active_ws_connections: Arc::new(AtomicUsize::new(0)),
-        ws_drain_notify: Arc::new(Notify::new()),
+        ws_connections_tx,
         shutdown_tx,
     };
 
@@ -188,26 +188,32 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         .route("/health", get(health))
         .route("/ws", get(ws_handler))
         .with_state(state.clone())
+        .layer(TraceLayer::new_for_http().make_span_with(
+            move |request: &axum::http::Request<_>| {
+                let request_span_id = request_counter.fetch_add(1, Ordering::Relaxed);
+                let request_id = request
+                    .headers()
+                    .get(axum::http::header::HeaderName::from_static("x-request-id"))
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or("missing");
+                info_span!(
+                    "http_request",
+                    request_span_id,
+                    request_id = %request_id,
+                    method = %request.method(),
+                    uri = %request.uri()
+                )
+            },
+        ))
         .layer(PropagateRequestIdLayer::new(
             axum::http::header::HeaderName::from_static("x-request-id"),
         ))
         .layer(SetRequestIdLayer::new(
             axum::http::header::HeaderName::from_static("x-request-id"),
             MakeRequestUuid,
-        ))
-        .layer(TraceLayer::new_for_http().make_span_with(
-            move |request: &axum::http::Request<_>| {
-                let request_span_id = request_counter.fetch_add(1, Ordering::Relaxed);
-                info_span!(
-                    "http_request",
-                    request_span_id,
-                    method = %request.method(),
-                    uri = %request.uri()
-                )
-            },
         ));
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], config.ws_listen_port));
+    let addr = SocketAddr::from((config.bind_address, config.ws_listen_port));
     let listener = TcpListener::bind(addr)
         .await
         .with_context(|| format!("failed to bind ws server on {addr}"))?;
@@ -289,7 +295,7 @@ async fn shutdown_signal(state: AppState) {
                 sigterm.recv().await;
             } else {
                 loop {
-                    sleep(Duration::from_secs(3600)).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
                 }
             }
         } => {},
@@ -300,9 +306,11 @@ async fn shutdown_signal(state: AppState) {
 
     info!(module = module_path!(), "shutdown signal received");
     let _ = state.shutdown_tx.send(());
-
-    if state.active_ws_connections.load(Ordering::SeqCst) > 0 {
-        state.ws_drain_notify.notified().await;
+    let mut ws_connections_rx = state.ws_connections_tx.subscribe();
+    while *ws_connections_rx.borrow() > 0 {
+        if ws_connections_rx.changed().await.is_err() {
+            break;
+        }
     }
 }
 
