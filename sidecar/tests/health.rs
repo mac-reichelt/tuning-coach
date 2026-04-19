@@ -9,9 +9,11 @@ use tokio::time::sleep;
 #[tokio::test]
 async fn sidecar_health_endpoint_returns_ok() {
     let ws_port = find_free_port();
+    let udp_port = find_free_port();
     let _sidecar = SidecarProcessGuard {
         child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
             .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
+            .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
             .spawn()
             .expect("sidecar should start"),
     };
