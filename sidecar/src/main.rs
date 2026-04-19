@@ -24,7 +24,7 @@ use figment::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::{
-    net::TcpListener,
+    net::{TcpListener, UdpSocket},
     sync::{broadcast, watch},
 };
 use tower_http::{
@@ -33,6 +33,8 @@ use tower_http::{
 };
 use tracing::{error, info, info_span};
 use tracing_subscriber::EnvFilter;
+
+mod telemetry;
 
 #[derive(Debug, Clone, Parser)]
 #[command(name = "tuning-coach-sidecar", version)]
@@ -101,6 +103,7 @@ impl AppConfig {
 struct AppState {
     active_ws_connections: Arc<AtomicUsize>,
     ws_connections_tx: watch::Sender<usize>,
+    latest_telemetry_tx: watch::Sender<Option<telemetry::TelemetryPacket>>,
     shutdown_tx: broadcast::Sender<()>,
 }
 
@@ -178,9 +181,11 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
     let request_counter = Arc::new(AtomicU64::new(1));
     let (shutdown_tx, _) = broadcast::channel(16);
     let (ws_connections_tx, _) = watch::channel(0usize);
+    let (latest_telemetry_tx, _) = watch::channel(None);
     let state = AppState {
         active_ws_connections: Arc::new(AtomicUsize::new(0)),
         ws_connections_tx,
+        latest_telemetry_tx,
         shutdown_tx,
     };
 
@@ -217,16 +222,34 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
     let listener = TcpListener::bind(addr)
         .await
         .with_context(|| format!("failed to bind ws server on {addr}"))?;
+    let udp_addr = SocketAddr::from((config.bind_address, config.udp_listen_port));
+    let udp_socket = UdpSocket::bind(udp_addr)
+        .await
+        .with_context(|| format!("failed to bind udp listener on {udp_addr}"))?;
     info!(
         module = module_path!(),
         ws_listen_port = config.ws_listen_port,
         "http/ws server listening"
     );
+    info!(
+        module = module_path!(),
+        udp_listen_port = config.udp_listen_port,
+        "udp telemetry listener bound"
+    );
+
+    let telemetry_task = tokio::spawn(telemetry::udp_listener_loop(
+        udp_socket,
+        state.latest_telemetry_tx.clone(),
+        state.shutdown_tx.subscribe(),
+    ));
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal(state))
         .await
         .context("http/ws server exited with error")?;
+    telemetry_task
+        .await
+        .context("udp telemetry task panicked")??;
 
     Ok(())
 }
