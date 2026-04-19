@@ -29,8 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       - name: Install Linux deps
@@ -52,7 +53,7 @@ jobs:
           cp "$src" "../dist/${{ matrix.artifact }}"
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           files: dist/${{ matrix.artifact }}
           tag_name: ${{ github.event.release.tag_name }}
@@ -71,7 +72,7 @@ jobs:
           (cd overlay && zip -r ../dist/tuning-coach-overlay.zip .)
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           files: |
             dist/tuning-coach-overlay.tar.gz
