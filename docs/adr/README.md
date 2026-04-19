@@ -6,7 +6,9 @@ immutable once accepted; superseding decisions get a new number.
 
 ## Index
 
-(empty — ADR-0001 lands with the Phase 1 sidecar foundation work)
+- [ADR-0002 — Sidecar WebSocket API contract](0002-sidecar-websocket-api.md) (proposed)
+
+(ADR-0001 — storage schema — lands with the Phase 1 sidecar foundation work.)
 
 ## Format
 
