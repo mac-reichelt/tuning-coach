@@ -1,0 +1,445 @@
+{
+  "$schema_version": 1,
+  "fixture_file": "fm-training.pcapng",
+  "fixture_sha256": "73f5deb4fc1eb5dbd92550ea9fc0eb1ec6e09d70c8f3fa54edc79e7686d1d971",
+  "fixture_size_bytes": 11899340,
+  "capture": {
+    "source_filename": "fm-training.pcapng",
+    "udp_dst_port": 5300,
+    "packet_format": "forza_motorsport_dash_v_fm2023",
+    "packet_size_bytes": 331,
+    "total_forza_packets": 30048,
+    "trim_first_idx": 0,
+    "trim_last_idx": 30047,
+    "car_ordinal": 419,
+    "track_ordinal": 861,
+    "car_human": "2006 Audi RS4 (ord 419)",
+    "track_human": "Brands Hatch Indy Circuit (ord 861)"
+  },
+  "session_metadata": {
+    "car": "2006 Audi RS4",
+    "car_ordinal": 419,
+    "track": "Brands Hatch Indy Circuit",
+    "track_ordinal": 861,
+    "game": "Forza Motorsport (FM 2023)",
+    "telemetry_format": "Dash",
+    "udp_dst_port": 5300,
+    "rate_hz": 60
+  },
+  "driver_lap_narrative": {
+    "lap_1": "rewind, off-track",
+    "lap_2": "clean",
+    "lap_3": "contact, pit",
+    "lap_4": "off-track, rewind across start line",
+    "lap_5": "session reset, then clean lap"
+  },
+  "driver_lap_to_telemetry_map": [
+    {
+      "driver_lap": "lap_1",
+      "matches": "seg02 LapNum=0  (preceded by gap01 rewind)"
+    },
+    {
+      "driver_lap": "lap_2",
+      "matches": "seg02 LapNum=1"
+    },
+    {
+      "driver_lap": "lap_3",
+      "matches": "seg02 LapNum=2  (contact at pkt 13464; pit cinematic in gap02)"
+    },
+    {
+      "driver_lap": "lap_4",
+      "matches": "seg03 LapNum=3  (off-track during; rewind across start in gap03)"
+    },
+    {
+      "driver_lap": "lap_5",
+      "matches": "seg06 LapNum=0  (preceded by gap05 session_reset)"
+    }
+  ],
+  "gap_classification_rules": {
+    "session_reset": "next_segment.DistanceTraveled == -1944.0 sentinel",
+    "rewind": "DistanceTraveled decreased by >10m across the gap",
+    "cinematic": "position teleport >50m AND DistanceTraveled increased >25m (game drove the car during the gap)",
+    "pause": "position teleport <5m AND |DistanceTraveled delta| <5m",
+    "unknown": "did not match any rule (investigate)"
+  },
+  "in_segment_event_rules": {
+    "contact": "sqrt(AccelX^2 + AccelY^2 + AccelZ^2) / 9.81 >= 5.0G, debounced by 0.5s"
+  },
+  "timeline": [
+    {
+      "type": "segment",
+      "id": "seg00",
+      "first_idx": 0,
+      "last_idx": 2500,
+      "packet_count": 2501,
+      "duration_s": 42.042,
+      "lap_nums": [
+        0
+      ],
+      "laps": [
+        {
+          "lap_num": 0,
+          "first_idx": 0,
+          "last_idx": 2500,
+          "duration_s": 42.042
+        }
+      ],
+      "start_pos": [
+        -149.38,
+        -18.36,
+        -332.21
+      ],
+      "end_pos": [
+        -357.19,
+        -24.39,
+        -250.01
+      ],
+      "start_dist_m": -1944.0,
+      "end_dist_m": 357.13,
+      "max_speed_m_s": 27.67,
+      "note": "pre-Lap-1 exploratory drive at low speed (peak 27 m/s); ends stationary."
+    },
+    {
+      "type": "gap",
+      "id": "gap00",
+      "after_segment": "seg00",
+      "before_segment": "seg01",
+      "first_idx": 2501,
+      "last_idx": 2852,
+      "duration_s": 6.026,
+      "classification": "pause",
+      "teleport_m": 0.0,
+      "dist_delta_m": 0.0,
+      "note": "user paused."
+    },
+    {
+      "type": "segment",
+      "id": "seg01",
+      "first_idx": 2853,
+      "last_idx": 3279,
+      "packet_count": 427,
+      "duration_s": 7.119,
+      "lap_nums": [
+        0
+      ],
+      "laps": [
+        {
+          "lap_num": 0,
+          "first_idx": 2853,
+          "last_idx": 3279,
+          "duration_s": 7.119
+        }
+      ],
+      "start_pos": [
+        -357.19,
+        -24.39,
+        -250.01
+      ],
+      "end_pos": [
+        -306.27,
+        -14.79,
+        -144.76
+      ],
+      "start_dist_m": 357.13,
+      "end_dist_m": 475.73,
+      "max_speed_m_s": 30.01,
+      "note": "user unpaused, drove a few more seconds."
+    },
+    {
+      "type": "gap",
+      "id": "gap01",
+      "after_segment": "seg01",
+      "before_segment": "seg02",
+      "first_idx": 3280,
+      "last_idx": 3714,
+      "duration_s": 7.266,
+      "classification": "rewind",
+      "teleport_m": 115.91,
+      "dist_delta_m": -117.16,
+      "note": "Lap 1 rewind: distance counter went backward 117m; position teleported back 116m."
+    },
+    {
+      "type": "segment",
+      "id": "seg02",
+      "first_idx": 3715,
+      "last_idx": 14304,
+      "packet_count": 10590,
+      "duration_s": 176.493,
+      "lap_nums": [
+        0,
+        1,
+        2
+      ],
+      "laps": [
+        {
+          "lap_num": 0,
+          "first_idx": 3715,
+          "last_idx": 7204,
+          "duration_s": 58.174
+        },
+        {
+          "lap_num": 1,
+          "first_idx": 7205,
+          "last_idx": 10692,
+          "duration_s": 58.133
+        },
+        {
+          "lap_num": 2,
+          "first_idx": 10693,
+          "last_idx": 14304,
+          "duration_s": 60.185
+        }
+      ],
+      "start_pos": [
+        -356.7,
+        -24.41,
+        -248.68
+      ],
+      "end_pos": [
+        188.07,
+        -7.93,
+        -368.89
+      ],
+      "start_dist_m": 358.57,
+      "end_dist_m": 5509.67,
+      "max_speed_m_s": 54.76,
+      "note": "Laps 1, 2, 3 driven contiguously. Lap 3 contains the contact event (~13.4G)."
+    },
+    {
+      "type": "gap",
+      "id": "gap02",
+      "after_segment": "seg02",
+      "before_segment": "seg03",
+      "first_idx": 14305,
+      "last_idx": 16405,
+      "duration_s": 35.094,
+      "classification": "cinematic",
+      "teleport_m": 393.19,
+      "dist_delta_m": 411.93,
+      "note": "Lap 3 -> Lap 4 transition with pit cinematic: car drove 412m during the gap and ended up 393m from where it stopped."
+    },
+    {
+      "type": "segment",
+      "id": "seg03",
+      "first_idx": 16406,
+      "last_idx": 20578,
+      "packet_count": 4173,
+      "duration_s": 69.543,
+      "lap_nums": [
+        3,
+        4
+      ],
+      "laps": [
+        {
+          "lap_num": 3,
+          "first_idx": 16406,
+          "last_idx": 20524,
+          "duration_s": 68.663
+        },
+        {
+          "lap_num": 4,
+          "first_idx": 20525,
+          "last_idx": 20578,
+          "duration_s": 0.88
+        }
+      ],
+      "start_pos": [
+        -204.21,
+        -9.04,
+        -395.6
+      ],
+      "end_pos": [
+        -164.38,
+        -8.7,
+        -411.01
+      ],
+      "start_dist_m": 5921.6,
+      "end_dist_m": 7823.98,
+      "max_speed_m_s": 53.78,
+      "note": "Lap 4 + tail of Lap 4 crossing into Lap 5; user rewound mid-Lap 5."
+    },
+    {
+      "type": "gap",
+      "id": "gap03",
+      "after_segment": "seg03",
+      "before_segment": "seg04",
+      "first_idx": 20579,
+      "last_idx": 21497,
+      "duration_s": 15.333,
+      "classification": "rewind",
+      "teleport_m": 366.88,
+      "dist_delta_m": -375.98,
+      "note": "Lap 4 rewind across start line: distance counter went backward 376m; LapNum jumped 4 -> 3."
+    },
+    {
+      "type": "segment",
+      "id": "seg04",
+      "first_idx": 21498,
+      "last_idx": 22118,
+      "packet_count": 621,
+      "duration_s": 10.351,
+      "lap_nums": [
+        3,
+        4
+      ],
+      "laps": [
+        {
+          "lap_num": 3,
+          "first_idx": 21498,
+          "last_idx": 21936,
+          "duration_s": 7.337
+        },
+        {
+          "lap_num": 4,
+          "first_idx": 21937,
+          "last_idx": 22118,
+          "duration_s": 3.014
+        }
+      ],
+      "start_pos": [
+        200.92,
+        -6.98,
+        -377.08
+      ],
+      "end_pos": [
+        -261.92,
+        -7.41,
+        -393.99
+      ],
+      "start_dist_m": 7448.0,
+      "end_dist_m": 7923.59,
+      "max_speed_m_s": 53.37,
+      "note": "post-rewind, brief in-control window."
+    },
+    {
+      "type": "gap",
+      "id": "gap04",
+      "after_segment": "seg04",
+      "before_segment": "seg05",
+      "first_idx": 22119,
+      "last_idx": 22513,
+      "duration_s": 6.638,
+      "classification": "pause",
+      "teleport_m": 0.63,
+      "dist_delta_m": 0.63,
+      "note": "user paused (menu)."
+    },
+    {
+      "type": "segment",
+      "id": "seg05",
+      "first_idx": 22514,
+      "last_idx": 22645,
+      "packet_count": 132,
+      "duration_s": 2.227,
+      "lap_nums": [
+        4
+      ],
+      "laps": [
+        {
+          "lap_num": 4,
+          "first_idx": 22514,
+          "last_idx": 22645,
+          "duration_s": 2.227
+        }
+      ],
+      "start_pos": [
+        -262.52,
+        -7.42,
+        -393.81
+      ],
+      "end_pos": [
+        -338.78,
+        -9.15,
+        -367.28
+      ],
+      "start_dist_m": 7924.22,
+      "end_dist_m": 7924.22,
+      "max_speed_m_s": 37.51,
+      "note": "very brief in-control window before session reset."
+    },
+    {
+      "type": "gap",
+      "id": "gap05",
+      "after_segment": "seg05",
+      "before_segment": "seg06",
+      "first_idx": 22646,
+      "last_idx": 25199,
+      "duration_s": 42.667,
+      "classification": "session_reset",
+      "teleport_m": 153.84,
+      "dist_delta_m": -9868.22,
+      "note": "session reset confirmed by DistanceTraveled jumping to -1944.0 sentinel; LapNum reset 4 -> 0."
+    },
+    {
+      "type": "segment",
+      "id": "seg06",
+      "first_idx": 25200,
+      "last_idx": 30047,
+      "packet_count": 4848,
+      "duration_s": 80.805,
+      "lap_nums": [
+        0,
+        1
+      ],
+      "laps": [
+        {
+          "lap_num": 0,
+          "first_idx": 25200,
+          "last_idx": 29953,
+          "duration_s": 79.255
+        },
+        {
+          "lap_num": 1,
+          "first_idx": 29954,
+          "last_idx": 30047,
+          "duration_s": 1.55
+        }
+      ],
+      "start_pos": [
+        -191.82,
+        -19.33,
+        -322.98
+      ],
+      "end_pos": [
+        -199.89,
+        -7.7,
+        -405.76
+      ],
+      "start_dist_m": -1944.0,
+      "end_dist_m": 2028.07,
+      "max_speed_m_s": 54.07,
+      "note": "Lap 5 driven cleanly after the session reset."
+    }
+  ],
+  "contacts": [
+    {
+      "capture_idx": 13464,
+      "magnitude_g": 13.4,
+      "segment_id": "seg02",
+      "lap_num": 2
+    }
+  ],
+  "expected_detector_results": {
+    "rewinds": [
+      "gap01",
+      "gap03"
+    ],
+    "cinematics": [
+      "gap02"
+    ],
+    "pauses": [
+      "gap00",
+      "gap04"
+    ],
+    "session_resets": [
+      "gap05"
+    ],
+    "contacts": [
+      {
+        "segment": "seg02",
+        "lap_num": 2,
+        "approx_g": 13.4
+      }
+    ]
+  }
+}
