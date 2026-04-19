@@ -1,0 +1,33 @@
+name: 🔒 Security report
+description: Report a security issue. For sensitive vulnerabilities, please use private reporting (Security tab → Report a vulnerability).
+title: "security: <summary>"
+labels: ["type:security", "priority:p0", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **For sensitive vulnerabilities**, please use [private security
+        advisories](https://github.com/mac-reichelt/tuning-coach/security/advisories/new)
+        instead of a public issue.
+
+        See [SECURITY.md](../../SECURITY.md) for the policy.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: What can an attacker do? Who is affected?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Steps to reproduce, ideally a minimal proof-of-concept.
+    validations:
+      required: true

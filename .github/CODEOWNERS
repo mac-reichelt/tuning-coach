@@ -1,0 +1,12 @@
+# Default owner for everything
+* @mac-reichelt
+
+# Workflow + CI changes need extra eyes
+/.github/                @mac-reichelt
+/.github/workflows/      @mac-reichelt
+
+# Vendored agents — edit at the source (~/.copilot/agents/) and re-sync
+/.github/agents/         @mac-reichelt
+
+# Architecture decisions
+/docs/adr/               @mac-reichelt

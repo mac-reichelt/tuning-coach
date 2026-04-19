@@ -1,0 +1,44 @@
+name: 🏎️ Tuning rule proposal
+description: Propose a new heuristic for the coach engine (e.g. "if X telemetry pattern, recommend Y adjustment").
+title: "feat(heuristics): <rule name>"
+labels: ["type:feat", "area:heuristics", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for proposing new tuning recommendations. The
+        race-engineer agent will validate the rule against established sim
+        racing tuning practice.
+  - type: textarea
+    id: symptom
+    attributes:
+      label: Telemetry symptom
+      description: What pattern in the data signals the problem?
+      placeholder: "Front suspension travel exceeds 95% on >2 corners per lap (bottoming out)."
+    validations:
+      required: true
+  - type: textarea
+    id: cause
+    attributes:
+      label: Likely root cause
+      description: What does this symptom usually indicate?
+    validations:
+      required: true
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Proposed recommendation
+      description: Specific numeric adjustment and direction.
+      placeholder: "Raise front ride height by 0.5–1.0 cm OR increase front spring rate by 10–15%."
+    validations:
+      required: true
+  - type: textarea
+    id: caveats
+    attributes:
+      label: Caveats / dependencies
+      description: When does this NOT apply? Driver style, track type, car class, etc.
+  - type: textarea
+    id: sources
+    attributes:
+      label: References
+      description: Links to driving coach articles, real-world engineering, prior art.

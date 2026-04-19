@@ -1,0 +1,79 @@
+name: 🐛 Bug report
+description: Something behaves incorrectly.
+title: "fix(<area>): <imperative summary>"
+labels: ["type:fix", "needs-triage"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Numbered steps. Include exact commands, input, and game/sim setup.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      render: shell
+  - type: input
+    id: sidecar-version
+    attributes:
+      label: Sidecar version
+      placeholder: "sidecar v0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: overlay-version
+    attributes:
+      label: Overlay version
+      placeholder: "overlay v0.1.0"
+  - type: input
+    id: game
+    attributes:
+      label: Game + version
+      placeholder: "Forza Motorsport (2023) 14.0.5.0"
+    validations:
+      required: true
+  - type: input
+    id: simhub
+    attributes:
+      label: SimHub version
+      placeholder: "9.5.6"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - sidecar
+        - overlay
+        - heuristics
+        - llm
+        - docs
+        - ci
+        - other
+    validations:
+      required: true

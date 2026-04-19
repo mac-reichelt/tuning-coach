@@ -1,0 +1,33 @@
+"area:sidecar":
+  - changed-files:
+      - any-glob-to-any-file:
+          - sidecar/**
+
+"area:overlay":
+  - changed-files:
+      - any-glob-to-any-file:
+          - overlay/**
+
+"area:docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/**
+          - README.md
+          - CONTRIBUTING.md
+          - SECURITY.md
+          - "**/*.md"
+
+"area:ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/workflows/**
+          - .github/dependabot.yml
+          - .github/release-please-config.json
+          - .github/release-please-manifest.json
+
+"area:agents":
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/agents/**
+          - .github/copilot-instructions.md
+          - .github/copilot-setup-steps.yml

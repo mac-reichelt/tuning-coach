@@ -1,0 +1,58 @@
+name: ✨ Feature request
+description: Propose a new capability or enhancement.
+title: "feat(<area>): <imperative summary>"
+labels: ["type:feat", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! The producer agent will refine this into a user story with
+        acceptance criteria. Please be specific about the *outcome* you want,
+        not the implementation.
+  - type: textarea
+    id: story
+    attributes:
+      label: User story
+      description: "As a <persona>, I want <capability> so that <outcome>."
+      placeholder: "As a returning racer, I want my last tune restored on launch so that I don't reapply settings every session."
+    validations:
+      required: true
+  - type: textarea
+    id: background
+    attributes:
+      label: Background / context
+      description: Why now? What prompted this? Any prior art?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria (optional — producer will refine)
+      description: Given/When/Then statements that would make this feature done.
+      placeholder: |
+        - Given a saved tune exists for the active car, when the sidecar starts, then the tune is loaded automatically.
+        - Given no saved tune exists, when the sidecar starts, then no tune is applied.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - sidecar
+        - overlay
+        - heuristics
+        - llm
+        - docs
+        - ci
+        - other
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority (suggested)
+      options:
+        - p3 (nice to have)
+        - p2 (default)
+        - p1 (important)
+        - p0 (release blocker)
+      default: 1

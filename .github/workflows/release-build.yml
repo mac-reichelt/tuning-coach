@@ -1,0 +1,79 @@
+name: release-build
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  sidecar:
+    if: startsWith(github.event.release.tag_name, 'sidecar-v')
+    name: sidecar (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: tuning-coach-sidecar.exe
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: tuning-coach-sidecar
+    defaults:
+      run:
+        working-directory: sidecar
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev libsqlite3-dev \
+            tesseract-ocr libtesseract-dev libleptonica-dev
+
+      - name: Build release
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          mkdir -p ../dist
+          src="target/${{ matrix.target }}/release/${{ matrix.artifact }}"
+          cp "$src" "../dist/${{ matrix.artifact }}"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.artifact }}
+          tag_name: ${{ github.event.release.tag_name }}
+
+  overlay:
+    if: startsWith(github.event.release.tag_name, 'overlay-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stage overlay
+        run: |
+          mkdir -p dist
+          tar -C overlay -czf dist/tuning-coach-overlay.tar.gz .
+          (cd overlay && zip -r ../dist/tuning-coach-overlay.zip .)
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/tuning-coach-overlay.tar.gz
+            dist/tuning-coach-overlay.zip
+          tag_name: ${{ github.event.release.tag_name }}

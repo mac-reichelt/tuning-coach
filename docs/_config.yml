@@ -1,0 +1,20 @@
+title: tuning-coach
+description: A real-time race engineer for sim racing. Live telemetry → specific tuning recommendations.
+theme: jekyll-theme-cayman
+markdown: kramdown
+plugins:
+  - jekyll-relative-links
+  - jekyll-optional-front-matter
+  - jekyll-readme-index
+  - jekyll-default-layout
+  - jekyll-titles-from-headings
+relative_links:
+  enabled: true
+  collections: true
+include:
+  - PLAN.md
+  - getting-started.md
+  - adr
+  - api
+  - reference
+  - tutorials

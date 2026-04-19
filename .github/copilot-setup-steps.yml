@@ -1,0 +1,54 @@
+steps:
+  - name: Set up Rust toolchain (stable)
+    uses: dtolnay/rust-toolchain@stable
+    with:
+      components: rustfmt, clippy
+
+  - name: Cache cargo registry + target
+    uses: actions/cache@v4
+    with:
+      path: |
+        ~/.cargo/registry
+        ~/.cargo/git
+        sidecar/target
+      key: ${{ runner.os }}-cargo-${{ hashFiles('sidecar/Cargo.lock') }}
+      restore-keys: |
+        ${{ runner.os }}-cargo-
+
+  - name: Install system dependencies
+    run: |
+      sudo apt-get update
+      sudo apt-get install -y --no-install-recommends \
+        pkg-config \
+        libssl-dev \
+        libsqlite3-dev \
+        tesseract-ocr \
+        libtesseract-dev \
+        libleptonica-dev
+
+  - name: Install Node.js (for overlay tooling)
+    uses: actions/setup-node@v4
+    with:
+      node-version: '20'
+      cache: 'npm'
+      cache-dependency-path: overlay/package-lock.json
+
+  - name: Install overlay dependencies
+    if: hashFiles('overlay/package.json') != ''
+    working-directory: overlay
+    run: npm ci
+
+  - name: Pre-install cargo tooling
+    run: |
+      cargo install --locked cargo-nextest || true
+      cargo install --locked cargo-deny    || true
+
+  - name: Smoke check toolchain
+    run: |
+      rustc --version
+      cargo --version
+      cargo fmt --version
+      cargo clippy --version
+      tesseract --version
+      node --version
+      npm --version
