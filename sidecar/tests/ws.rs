@@ -11,9 +11,11 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 #[tokio::test]
 async fn sidecar_streams_telemetry_and_recommendations_to_multiple_clients() {
     let ws_port = find_free_port();
+    let udp_port = find_free_port();
     let _sidecar = SidecarProcessGuard {
         child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
             .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
+            .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
             .spawn()
             .expect("sidecar should start"),
     };
@@ -64,9 +66,11 @@ async fn sidecar_streams_telemetry_and_recommendations_to_multiple_clients() {
 #[tokio::test]
 async fn sidecar_rejects_client_schema_version_mismatch() {
     let ws_port = find_free_port();
+    let udp_port = find_free_port();
     let _sidecar = SidecarProcessGuard {
         child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
             .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
+            .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
             .spawn()
             .expect("sidecar should start"),
     };
