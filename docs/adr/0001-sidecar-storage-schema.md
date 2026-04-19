@@ -1,6 +1,6 @@
 # ADR 0001: Sidecar Storage Schema (SQLite)
 
-- Status: Proposed
+- Status: proposed
 - Date: 2025-11-15
 - Deciders: @mac-reichelt
 - Issue: [#8](https://github.com/mac-reichelt/tuning-coach/issues/8)
@@ -32,7 +32,7 @@ durable local store for:
 - **WAL mode.** Concurrent reader (overlay query thread) + single writer
   (telemetry ingest) without contention.
 - **File path:** `<data_dir>/tuning-coach.db` (Windows
-  `%LOCALAPPDATA%\tuning-coach\`).
+  `%LOCALAPPDATA%\tuning-coach\tuning-coach.db`).
 - **Backup-friendly.** Copying the `.db` file (and `.db-wal`, `.db-shm`) while
   the app is closed must produce a usable backup.
 
@@ -72,8 +72,8 @@ scans and basic filtering without a parse step.
 
 A `_migrations` table tracks applied schema versions. Migration files live in
 `sidecar/migrations/NNNN_<name>.sql` and are applied in numeric order at
-startup inside a transaction; each migration is recorded with its SHA-256 to
-detect tampering.
+startup, with each migration executed in its own transaction; each migration
+is recorded with its SHA-256 to detect tampering.
 
 ### Schema
 
