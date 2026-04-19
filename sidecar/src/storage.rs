@@ -7,6 +7,7 @@ use std::{
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, Connection};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 #[derive(Clone)]
@@ -25,7 +26,10 @@ impl Storage {
         let manager = SqliteConnectionManager::file(&db_path).with_init(|conn| {
             conn.execute_batch(
                 "PRAGMA journal_mode=WAL;
-                 PRAGMA foreign_keys=ON;",
+                 PRAGMA synchronous=NORMAL;
+                 PRAGMA foreign_keys=ON;
+                 PRAGMA busy_timeout=5000;
+                 PRAGMA temp_store=MEMORY;",
             )
         });
 
@@ -73,6 +77,12 @@ pub(crate) enum StorageError {
         db_name: String,
         file_name: String,
     },
+    #[error("applied migration version {version} has mismatched sha256 (db={db_sha256}, file={file_sha256})")]
+    AppliedMigrationHashMismatch {
+        version: i64,
+        db_sha256: String,
+        file_sha256: String,
+    },
     #[error("failed to apply migration {path:?}")]
     ApplyMigration {
         path: PathBuf,
@@ -85,6 +95,7 @@ pub(crate) enum StorageError {
 struct Migration {
     version: i64,
     name: String,
+    sha256: String,
     path: PathBuf,
     sql: String,
 }
@@ -102,6 +113,7 @@ fn run_migrations_from_dir(
         "CREATE TABLE IF NOT EXISTS _migrations (
             version INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
             applied_at TEXT NOT NULL DEFAULT (datetime('now'))
         );",
     )?;
@@ -110,12 +122,19 @@ fn run_migrations_from_dir(
     let applied = load_applied_migrations(conn)?;
 
     for migration in migrations {
-        if let Some(db_name) = applied.get(&migration.version) {
+        if let Some((db_name, db_sha256)) = applied.get(&migration.version) {
             if db_name != &migration.name {
                 return Err(StorageError::AppliedMigrationMismatch {
                     version: migration.version,
                     db_name: db_name.clone(),
                     file_name: migration.name,
+                });
+            }
+            if db_sha256 != &migration.sha256 {
+                return Err(StorageError::AppliedMigrationHashMismatch {
+                    version: migration.version,
+                    db_sha256: db_sha256.clone(),
+                    file_sha256: migration.sha256,
                 });
             }
             continue;
@@ -128,8 +147,8 @@ fn run_migrations_from_dir(
                 source,
             })?;
         tx.execute(
-            "INSERT INTO _migrations(version, name) VALUES (?1, ?2)",
-            params![migration.version, migration.name],
+            "INSERT INTO _migrations(version, name, sha256) VALUES (?1, ?2, ?3)",
+            params![migration.version, migration.name, migration.sha256],
         )?;
         tx.commit()?;
     }
@@ -171,6 +190,7 @@ fn collect_migrations(migrations_dir: &Path) -> Result<Vec<Migration>, StorageEr
         migrations.push(Migration {
             version,
             name,
+            sha256: sha256_hex(sql.as_bytes()),
             path,
             sql,
         });
@@ -218,18 +238,30 @@ fn parse_migration_filename(filename: &str) -> Result<(i64, String), StorageErro
     Ok((version, name.to_string()))
 }
 
-fn load_applied_migrations(conn: &Connection) -> Result<HashMap<i64, String>, StorageError> {
-    let mut statement = conn.prepare("SELECT version, name FROM _migrations")?;
+fn load_applied_migrations(
+    conn: &Connection,
+) -> Result<HashMap<i64, (String, String)>, StorageError> {
+    let mut statement = conn.prepare("SELECT version, name, sha256 FROM _migrations")?;
     let rows = statement.query_map([], |row| {
-        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
     })?;
 
     let mut applied = HashMap::new();
     for row in rows {
-        let (version, name) = row?;
-        applied.insert(version, name);
+        let (version, name, sha256) = row?;
+        applied.insert(version, (name, sha256));
     }
     Ok(applied)
+}
+
+fn sha256_hex(contents: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(contents);
+    format!("{:x}", hasher.finalize())
 }
 
 #[cfg(test)]
@@ -260,6 +292,14 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM _migrations", [], |row| row.get(0))
             .expect("count migrations");
         assert_eq!(migration_count, 1);
+        let sha_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM _migrations WHERE LENGTH(sha256) = 64",
+                [],
+                |row| row.get(0),
+            )
+            .expect("sha256 stored");
+        assert_eq!(sha_count, 1);
         let table_count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sessions'",
@@ -295,16 +335,16 @@ mod tests {
         run_migrations_from_dir(&mut conn, &migrations_dir).expect("run migrations");
 
         conn.execute(
-            "INSERT INTO sessions(id, started_at, car_ordinal, track_id)
+            "INSERT INTO sessions(started_at, car_ordinal, track_id, sidecar_version)
              VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params!["session-1", "2026-01-01T00:00:00Z", 123_i64, "silverstone"],
+            rusqlite::params!["2026-01-01T00:00:00Z", 123_i64, "silverstone", "0.1.0"],
         )
         .expect("insert session");
 
         let track_id: String = conn
             .query_row(
-                "SELECT track_id FROM sessions WHERE id = ?1",
-                rusqlite::params!["session-1"],
+                "SELECT track_id FROM sessions WHERE car_ordinal = ?1",
+                rusqlite::params![123_i64],
                 |row| row.get(0),
             )
             .expect("query session");
