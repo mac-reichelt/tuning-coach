@@ -63,7 +63,7 @@ below and frozen at `schema_version: 1`. Incompatible changes bump
 | Default bind        | `127.0.0.1:38920`                                       |
 | Bind override       | config key `ws.bind` (env: `TUNING_COACH_WS_BIND`)      |
 | Path                | `/ws`                                                   |
-| Subprotocol         | `tuning-coach.v1` (sent in `Sec-WebSocket-Protocol`)    |
+| Subprotocol         | `tuning-coach.v1` (optional in current implementation)   |
 | Frame type          | Text frames only; binary frames rejected                |
 | Encoding            | UTF-8 JSON, one envelope per frame                      |
 | Max frame size      | 64 KiB (server-enforced; closes with 1009 if exceeded)  |
@@ -155,13 +155,9 @@ cleanly without coupling the two queues.
 ### Versioning
 
 - `schema_version` is an integer monotonically increasing per breaking change.
-- The subprotocol string (`tuning-coach.v1`) carries the *major* version. The
-  server only speaks `tuning-coach.v1`; if the upgrade completes without
-  negotiating that subprotocol (e.g. the client requested `tuning-coach.v2`),
-  the server immediately closes with code **`4002`** and reason
-  `"unsupported subprotocol"`. The client must reconnect with the correct
-  subprotocol. Note: `4002` is an application close frame sent *after* the
-  HTTP 101 upgrade — it is not an HTTP-level rejection.
+- The subprotocol string (`tuning-coach.v1`) carries the *major* version.
+  Subprotocol enforcement is deferred; current implementation accepts clients
+  without explicit subprotocol negotiation.
 - Once upgraded, if the client's first non-`hello` frame carries a different
   `schema_version`, the server closes with code **`4001`** and reason
   `"schema_version mismatch: server=N client=M"`.
@@ -172,7 +168,7 @@ cleanly without coupling the two queues.
 
 Any number of clients may connect simultaneously. Each gets:
 
-- Its own `hello` (with a unique `client_id`).
+- Its own `hello`.
 - Its own subscription filter and downsample rate.
 - Its own slow-consumer accounting.
 
@@ -206,24 +202,11 @@ Mandatory per architect cross-cutting standards:
 {
   "type": "hello",
   "schema_version": 1,
-  "t_ms": 1738012345678,
-  "data": {
-    "sidecar_version": "0.1.0",
-    "client_id": "01HQ7K8YV3...",
-    "server_time_ms": 1738012345678,
-    "telemetry_default_hz": 10,
-    "telemetry_max_hz": 60,
-    "supported_event_types": [
-      "telemetry", "recommendation", "lap_completed",
-      "session_started", "session_ended", "pong", "error"
-    ]
-  }
+  "sidecar_version": "0.1.0"
 }
 ```
 
-> **Note:** `"hello"` is intentionally absent from `supported_event_types`.
-> It is sent exactly once at connect-time before any other frame; it is not a
-> subscribeable event type and clients always receive it unconditionally.
+It is sent exactly once at connect-time before any other frame.
 
 ### `telemetry` (server → client)
 

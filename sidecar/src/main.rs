@@ -106,7 +106,7 @@ impl AppConfig {
         }
         if !(1..=MAX_TELEMETRY_HZ).contains(&self.telemetry_hz) {
             return Err(Box::new(figment::Error::from(format!(
-                "telemetry_hz must be in 1..={MAX_TELEMETRY_HZ}"
+                "telemetry_hz must be in the range [1, {MAX_TELEMETRY_HZ}]"
             ))));
         }
         Ok(())
@@ -325,7 +325,7 @@ async fn ws_connection_loop(mut socket: WebSocket, state: AppState) {
     ping_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
     let mut idle_check_interval = interval(Duration::from_secs(5));
     idle_check_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    let telemetry_rx = state.telemetry_tx.subscribe();
+    let mut telemetry_rx = state.telemetry_tx.subscribe();
     let mut last_client_activity = Instant::now();
 
     loop {
@@ -361,9 +361,11 @@ async fn ws_connection_loop(mut socket: WebSocket, state: AppState) {
                 }
             }
             _ = telemetry_interval.tick() => {
-                let telemetry_payload = telemetry_rx.borrow().clone();
-                if !telemetry_payload.is_null() && send_event(&mut socket, "telemetry", &telemetry_payload).await.is_err() {
-                    break;
+                if telemetry_rx.has_changed().unwrap_or(false) {
+                    let telemetry_payload = telemetry_rx.borrow_and_update().clone();
+                    if !telemetry_payload.is_null() && send_event(&mut socket, "telemetry", &telemetry_payload).await.is_err() {
+                        break;
+                    }
                 }
             }
             recommendation = recommendation_rx.recv() => {
