@@ -8,7 +8,7 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       include: scope
-    labels: ["type:chore", "area:sidecar", "deps"]
+    labels: ["type:chore", "area:sidecar", "deps", "automerge"]
 
   - package-ecosystem: npm
     directory: /overlay
@@ -18,7 +18,7 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       include: scope
-    labels: ["type:chore", "area:overlay", "deps"]
+    labels: ["type:chore", "area:overlay", "deps", "automerge"]
 
   - package-ecosystem: github-actions
     directory: /
@@ -28,4 +28,4 @@ updates:
     commit-message:
       prefix: "chore(ci)"
       include: scope
-    labels: ["type:ci", "deps"]
+    labels: ["type:ci", "deps", "automerge"]
