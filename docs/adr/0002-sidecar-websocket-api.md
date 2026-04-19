@@ -155,10 +155,13 @@ cleanly without coupling the two queues.
 ### Versioning
 
 - `schema_version` is an integer monotonically increasing per breaking change.
-- The subprotocol string (`tuning-coach.v1`) carries the *major* version. A
-  client requesting `tuning-coach.v2` against a v1 server gets a 426
-  Upgrade Required equivalent (the WS handshake fails with no subprotocol
-  agreement; client must reconnect with the correct subprotocol).
+- The subprotocol string (`tuning-coach.v1`) carries the *major* version. The
+  server only speaks `tuning-coach.v1`; if the upgrade completes without
+  negotiating that subprotocol (e.g. the client requested `tuning-coach.v2`),
+  the server immediately closes with code **`4002`** and reason
+  `"unsupported subprotocol"`. The client must reconnect with the correct
+  subprotocol. Note: `4002` is an application close frame sent *after* the
+  HTTP 101 upgrade — it is not an HTTP-level rejection.
 - Once upgraded, if the client's first non-`hello` frame carries a different
   `schema_version`, the server closes with code **`4001`** and reason
   `"schema_version mismatch: server=N client=M"`.
@@ -217,6 +220,10 @@ Mandatory per architect cross-cutting standards:
   }
 }
 ```
+
+> **Note:** `"hello"` is intentionally absent from `supported_event_types`.
+> It is sent exactly once at connect-time before any other frame; it is not a
+> subscribeable event type and clients always receive it unconditionally.
 
 ### `telemetry` (server → client)
 

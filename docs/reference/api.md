@@ -93,6 +93,10 @@ bumps `schema_version`.
 }
 ```
 
+> **Note:** `"hello"` is intentionally absent from `supported_event_types`.
+> It is sent unconditionally as the first frame on every connection and is not
+> a subscribeable event type.
+
 ### `telemetry`
 
 Curated subset of the Forza Dash packet. **Tire temps are converted from °F
@@ -295,7 +299,12 @@ Out-of-range values produce an `error` envelope; the previous rate is kept.
 - The subprotocol carries the major version: `tuning-coach.v1` today.
 - A client offering a different `schema_version` than the server is closed
   with code `4001` and reason `"schema_version mismatch: server=N client=M"`.
-- A client offering a non-existent subprotocol gets a failed handshake.
+- A client offering a non-existent subprotocol: the server completes the
+  HTTP 101 upgrade and immediately closes the connection with code **`4002`**
+  and reason `"unsupported subprotocol"`. The client must reconnect with
+  `tuning-coach.v1`. (A post-upgrade close is used so that all client
+  WebSocket implementations receive a clean close frame regardless of how
+  they handle a refused upgrade.)
 - Adding fields to a `data` payload or new event `type`s is non-breaking;
   clients must ignore unknown fields and unknown types.
 
@@ -314,7 +323,7 @@ Out-of-range values produce an `error` envelope; the previous rate is kept.
 
 Any number of clients may connect simultaneously. Each gets its own filter,
 its own downsample rate, and its own slow-consumer accounting. A debug
-dashboard at 60 Hz and an HUD at 10 Hz can coexist on the same sidecar.
+dashboard at 60 Hz and a HUD at 10 Hz can coexist on the same sidecar.
 
 ## Security
 
