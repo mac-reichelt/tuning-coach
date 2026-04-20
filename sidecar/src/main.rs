@@ -66,6 +66,14 @@ struct AppConfig {
     telemetry_hz: u16,
     rewind_backward_jump_m: f32,
     session_reset_race_time_window_s: f32,
+    off_track_window_ms: u32,
+    off_track_min_wheels: u8,
+    surface_rumble_threshold: f32,
+    surface_rumble_window_packets: usize,
+    wall_contact_g_threshold: f32,
+    corner_cut_speed_kph_min: f32,
+    corner_cut_combined_slip_threshold: f32,
+    corner_cut_max_abs_steer_norm: f32,
     pause_debounce_ms: u64,
     packet_timeout_ms: u64,
     bind_address: IpAddr,
@@ -75,14 +83,21 @@ struct AppConfig {
 
 impl Default for AppConfig {
     fn default() -> Self {
+        let defaults = lap_validity::LapValidityConfig::default();
         Self {
             udp_listen_port: 7777,
             ws_listen_port: 7778,
             telemetry_hz: DEFAULT_TELEMETRY_HZ,
-            rewind_backward_jump_m: lap_validity::LapValidityConfig::default()
-                .rewind_backward_jump_m,
-            session_reset_race_time_window_s: lap_validity::LapValidityConfig::default()
-                .session_reset_race_time_window_s,
+            rewind_backward_jump_m: defaults.rewind_backward_jump_m,
+            session_reset_race_time_window_s: defaults.session_reset_race_time_window_s,
+            off_track_window_ms: defaults.off_track_window_ms,
+            off_track_min_wheels: defaults.off_track_min_wheels,
+            surface_rumble_threshold: defaults.surface_rumble_threshold,
+            surface_rumble_window_packets: defaults.surface_rumble_window_packets,
+            wall_contact_g_threshold: defaults.wall_contact_g_threshold,
+            corner_cut_speed_kph_min: defaults.corner_cut_speed_kph_min,
+            corner_cut_combined_slip_threshold: defaults.corner_cut_combined_slip_threshold,
+            corner_cut_max_abs_steer_norm: defaults.corner_cut_max_abs_steer_norm,
             pause_debounce_ms: DEFAULT_PAUSE_DEBOUNCE_MS,
             packet_timeout_ms: DEFAULT_PACKET_TIMEOUT_MS,
             bind_address: IpAddr::V4(Ipv4Addr::LOCALHOST),
@@ -129,6 +144,14 @@ impl AppConfig {
         lap_validity::LapValidityConfig {
             rewind_backward_jump_m: self.rewind_backward_jump_m,
             session_reset_race_time_window_s: self.session_reset_race_time_window_s,
+            off_track_window_ms: self.off_track_window_ms,
+            off_track_min_wheels: self.off_track_min_wheels,
+            surface_rumble_threshold: self.surface_rumble_threshold,
+            surface_rumble_window_packets: self.surface_rumble_window_packets,
+            wall_contact_g_threshold: self.wall_contact_g_threshold,
+            corner_cut_speed_kph_min: self.corner_cut_speed_kph_min,
+            corner_cut_combined_slip_threshold: self.corner_cut_combined_slip_threshold,
+            corner_cut_max_abs_steer_norm: self.corner_cut_max_abs_steer_norm,
         }
         .validate()
         .map_err(|err| Box::new(figment::Error::from(err)))?;
@@ -352,6 +375,14 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         lap_validity::LapValidityConfig {
             rewind_backward_jump_m: config.rewind_backward_jump_m,
             session_reset_race_time_window_s: config.session_reset_race_time_window_s,
+            off_track_window_ms: config.off_track_window_ms,
+            off_track_min_wheels: config.off_track_min_wheels,
+            surface_rumble_threshold: config.surface_rumble_threshold,
+            surface_rumble_window_packets: config.surface_rumble_window_packets,
+            wall_contact_g_threshold: config.wall_contact_g_threshold,
+            corner_cut_speed_kph_min: config.corner_cut_speed_kph_min,
+            corner_cut_combined_slip_threshold: config.corner_cut_combined_slip_threshold,
+            corner_cut_max_abs_steer_norm: config.corner_cut_max_abs_steer_norm,
         },
     ));
     let session_state_task = tokio::spawn(session_state::session_state_loop(
@@ -512,6 +543,7 @@ async fn ws_connection_loop(mut socket: WebSocket, state: AppState) {
                     Ok(event) => {
                         let event_type = match event {
                             lap_validity::LapValidityEvent::LapRewindDetected {..} => "lap_rewind_detected",
+                            lap_validity::LapValidityEvent::LapDirtyDetected {..} => "lap_dirty_detected",
                             lap_validity::LapValidityEvent::SessionResetDetected {..} => "session_reset_detected",
                         };
                         if let Ok(payload) = serde_json::to_value(event) {

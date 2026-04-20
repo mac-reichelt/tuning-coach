@@ -7,6 +7,7 @@ use std::{
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, Connection};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
@@ -84,17 +85,68 @@ impl Storage {
         session_id: i64,
         lap_number: u16,
     ) -> Result<(), StorageError> {
+        let _ = self.mark_lap_dirty(session_id, lap_number, "Rewind")?;
         let conn = self.pool.get()?;
         conn.execute(
             "UPDATE laps
-                SET valid = 0,
-                    dirty_reason = 'Rewind',
-                    is_reset = 1
+                SET is_reset = 1
               WHERE session_id = ?1
                 AND lap_number = ?2",
             params![session_id, i64::from(lap_number)],
         )?;
         Ok(())
+    }
+
+    pub(crate) fn mark_lap_dirty(
+        &self,
+        session_id: i64,
+        lap_number: u16,
+        reason: &str,
+    ) -> Result<i64, StorageError> {
+        let conn = self.pool.get()?;
+        let (lap_id, dirty_reason, dirty_reasons) = conn.query_row(
+            "SELECT id, dirty_reason, dirty_reasons
+               FROM laps
+              WHERE session_id = ?1
+                AND lap_number = ?2",
+            params![session_id, i64::from(lap_number)],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )?;
+
+        let dirty_reason = dirty_reason.unwrap_or_else(|| reason.to_string());
+        let mut reasons = match dirty_reasons {
+            Some(serialized) => parse_dirty_reasons_json(&serialized),
+            None => Vec::new(),
+        };
+        if reasons.is_empty() {
+            reasons.push(dirty_reason.clone());
+        }
+        if !reasons.iter().any(|existing| existing == reason) {
+            reasons.push(reason.to_string());
+        }
+        let dirty_reasons_json = serde_json::to_string(&reasons)?;
+
+        conn.execute(
+            "UPDATE laps
+                SET valid = 0,
+                    dirty_reason = ?3,
+                    dirty_reasons = ?4
+              WHERE session_id = ?1
+                AND lap_number = ?2",
+            params![
+                session_id,
+                i64::from(lap_number),
+                dirty_reason,
+                dirty_reasons_json
+            ],
+        )?;
+        Ok(lap_id)
     }
 
     #[cfg(test)]
@@ -116,10 +168,42 @@ impl Storage {
     }
 
     #[cfg(test)]
+    pub(crate) fn read_lap_dirty_reasons(
+        &self,
+        session_id: i64,
+        lap_number: u16,
+    ) -> Result<Vec<String>, StorageError> {
+        let conn = self.pool.get()?;
+        let dirty_reasons = conn.query_row(
+            "SELECT dirty_reasons
+               FROM laps
+              WHERE session_id = ?1
+                AND lap_number = ?2",
+            params![session_id, i64::from(lap_number)],
+            |row| row.get::<_, Option<String>>(0),
+        )?;
+        Ok(dirty_reasons
+            .as_deref()
+            .map(parse_dirty_reasons_json)
+            .unwrap_or_default())
+    }
+
+    #[cfg(test)]
     pub(crate) fn count_sessions(&self) -> Result<i64, StorageError> {
         let conn = self.pool.get()?;
         conn.query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
             .map_err(StorageError::from)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn first_session_id(&self) -> Result<i64, StorageError> {
+        let conn = self.pool.get()?;
+        conn.query_row(
+            "SELECT id FROM sessions ORDER BY id ASC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(StorageError::from)
     }
 
     #[cfg(test)]
@@ -146,6 +230,8 @@ pub(crate) enum StorageError {
     Pool(#[from] r2d2::Error),
     #[error("sqlite error")]
     Sqlite(#[from] rusqlite::Error),
+    #[error("json serialization error")]
+    Json(#[from] serde_json::Error),
     #[error("failed to read migrations directory {path:?}")]
     ReadMigrationsDir {
         path: PathBuf,
@@ -355,6 +441,16 @@ fn sha256_hex(contents: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(contents);
     format!("{:x}", hasher.finalize())
+}
+
+fn parse_dirty_reasons_json(serialized: &str) -> Vec<String> {
+    match serde_json::from_str::<Value>(serialized) {
+        Ok(Value::Array(values)) => values
+            .into_iter()
+            .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 #[cfg(test)]
