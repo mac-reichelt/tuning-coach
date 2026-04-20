@@ -12,3 +12,8 @@ See [docs/PLAN.md](../docs/PLAN.md) for the roadmap.
 cargo build --release
 ./target/release/tuning-coach-sidecar
 ```
+
+## Lap validity detection defaults
+
+- `TUNING_COACH_REWIND_BACKWARD_JUMP_M` (default: `50.0`)
+- `TUNING_COACH_SESSION_RESET_RACE_TIME_WINDOW_S` (default: `2.0`)

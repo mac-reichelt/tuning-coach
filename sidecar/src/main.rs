@@ -37,6 +37,7 @@ use tower_http::{
 use tracing::{error, info, info_span};
 use tracing_subscriber::EnvFilter;
 
+mod lap_validity;
 mod storage;
 mod telemetry;
 
@@ -55,11 +56,13 @@ struct Cli {
     print_config: bool,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 struct AppConfig {
     udp_listen_port: u16,
     ws_listen_port: u16,
     telemetry_hz: u16,
+    rewind_backward_jump_m: f32,
+    session_reset_race_time_window_s: f32,
     bind_address: IpAddr,
     data_dir: PathBuf,
     log_level: String,
@@ -71,6 +74,10 @@ impl Default for AppConfig {
             udp_listen_port: 7777,
             ws_listen_port: 7778,
             telemetry_hz: DEFAULT_TELEMETRY_HZ,
+            rewind_backward_jump_m: lap_validity::LapValidityConfig::default()
+                .rewind_backward_jump_m,
+            session_reset_race_time_window_s: lap_validity::LapValidityConfig::default()
+                .session_reset_race_time_window_s,
             bind_address: IpAddr::V4(Ipv4Addr::LOCALHOST),
             data_dir: PathBuf::from("./data"),
             log_level: "info".to_string(),
@@ -112,19 +119,27 @@ impl AppConfig {
                 "telemetry_hz must be in the range [1, {MAX_TELEMETRY_HZ}]"
             ))));
         }
+        lap_validity::LapValidityConfig {
+            rewind_backward_jump_m: self.rewind_backward_jump_m,
+            session_reset_race_time_window_s: self.session_reset_race_time_window_s,
+        }
+        .validate()
+        .map_err(|err| Box::new(figment::Error::from(err)))?;
         Ok(())
     }
 }
 
 #[derive(Clone)]
 struct AppState {
-    _storage: storage::Storage,
+    storage: storage::Storage,
     active_ws_connections: Arc<AtomicUsize>,
     ws_connections_tx: watch::Sender<usize>,
     latest_telemetry_tx: watch::Sender<Option<telemetry::TelemetryPacket>>,
     shutdown_tx: broadcast::Sender<()>,
     telemetry_tx: watch::Sender<Value>,
     recommendation_tx: broadcast::Sender<Value>,
+    lap_validity_tx: broadcast::Sender<lap_validity::LapValidityEvent>,
+    suppress_heuristics_tx: watch::Sender<bool>,
     telemetry_hz: u16,
 }
 
@@ -134,6 +149,9 @@ impl AppState {
     }
 
     fn emit_recommendation(&self, payload: Value) {
+        if *self.suppress_heuristics_tx.borrow() {
+            return;
+        }
         let _ = self.recommendation_tx.send(payload);
     }
 }
@@ -243,13 +261,15 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
     let (ws_connections_tx, _) = watch::channel(0usize);
     let (latest_telemetry_tx, _) = watch::channel(None);
     let state = AppState {
-        _storage: storage,
+        storage,
         active_ws_connections: Arc::new(AtomicUsize::new(0)),
         ws_connections_tx,
         latest_telemetry_tx,
         shutdown_tx,
         telemetry_tx: watch::channel(Value::Null).0,
         recommendation_tx: broadcast::channel(256).0,
+        lap_validity_tx: broadcast::channel(256).0,
+        suppress_heuristics_tx: watch::channel(false).0,
         telemetry_hz: config.telemetry_hz,
     };
 
@@ -308,6 +328,13 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         state.latest_telemetry_tx.clone(),
         state.shutdown_tx.subscribe(),
     ));
+    let lap_validity_task = tokio::spawn(lap_validity_loop(
+        state.clone(),
+        lap_validity::LapValidityConfig {
+            rewind_backward_jump_m: config.rewind_backward_jump_m,
+            session_reset_race_time_window_s: config.session_reset_race_time_window_s,
+        },
+    ));
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal(state))
@@ -316,6 +343,41 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
     telemetry_task
         .await
         .context("udp telemetry task panicked")??;
+    lap_validity_task
+        .await
+        .context("lap validity task panicked")??;
+
+    Ok(())
+}
+
+async fn lap_validity_loop(
+    state: AppState,
+    config: lap_validity::LapValidityConfig,
+) -> anyhow::Result<()> {
+    let mut detector = lap_validity::LapValidityDetector::new(config);
+    let mut packet_rx = state.latest_telemetry_tx.subscribe();
+    let mut shutdown_rx = state.shutdown_tx.subscribe();
+    let sidecar_version = env!("CARGO_PKG_VERSION");
+
+    loop {
+        tokio::select! {
+            _ = shutdown_rx.recv() => break,
+            changed = packet_rx.changed() => {
+                if changed.is_err() {
+                    break;
+                }
+                let packet = packet_rx.borrow_and_update().clone();
+                let Some(telemetry::TelemetryPacket::Dash(dash_packet)) = packet else {
+                    continue;
+                };
+                let events = detector.process_packet(&dash_packet, &state.storage, sidecar_version)?;
+                let _ = state.suppress_heuristics_tx.send(detector.suppress_current_lap_analysis());
+                for event in events {
+                    let _ = state.lap_validity_tx.send(event);
+                }
+            }
+        }
+    }
 
     Ok(())
 }
@@ -332,6 +394,7 @@ async fn ws_connection_loop(mut socket: WebSocket, state: AppState) {
     let _guard = WsConnectionGuard::new(&state);
     let mut shutdown_rx = state.shutdown_tx.subscribe();
     let mut recommendation_rx = state.recommendation_tx.subscribe();
+    let mut lap_validity_rx = state.lap_validity_tx.subscribe();
     let hello = HelloMessage {
         r#type: "hello",
         schema_version: SCHEMA_VERSION,
@@ -405,6 +468,23 @@ async fn ws_connection_loop(mut socket: WebSocket, state: AppState) {
                     Ok(payload) => {
                         if send_event(&mut socket, "recommendation", &payload).await.is_err() {
                             break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            lap_event = lap_validity_rx.recv() => {
+                match lap_event {
+                    Ok(event) => {
+                        let event_type = match event {
+                            lap_validity::LapValidityEvent::LapRewindDetected {..} => "lap_rewind_detected",
+                            lap_validity::LapValidityEvent::SessionResetDetected {..} => "session_reset_detected",
+                        };
+                        if let Ok(payload) = serde_json::to_value(event) {
+                            if send_event(&mut socket, event_type, &payload).await.is_err() {
+                                break;
+                            }
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => {}
@@ -542,6 +622,14 @@ mod tests {
     #[serial]
     fn config_invalid_port_fails() {
         with_var("TUNING_COACH_WS_LISTEN_PORT", Some("70000"), || {
+            let result = AppConfig::from_sources(None, true);
+            assert!(result.is_err());
+        });
+    }
+
+    #[test]
+    fn config_invalid_rewind_threshold_fails() {
+        with_var("TUNING_COACH_REWIND_BACKWARD_JUMP_M", Some("0"), || {
             let result = AppConfig::from_sources(None, true);
             assert!(result.is_err());
         });
