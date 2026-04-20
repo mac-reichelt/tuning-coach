@@ -352,7 +352,7 @@ impl LapValidityDetector {
                     let dwell_ms = packet.sled.timestamp_ms.wrapping_sub(*exit_start);
                     if dwell_ms >= exit_dwell_ms {
                         let duration_s =
-                            packet.sled.timestamp_ms.wrapping_sub(*started_at_ms) as f32 / 1000.0;
+                            duration_s_between_ms(*started_at_ms, packet.sled.timestamp_ms);
                         let event = LapValidityEvent::PitStopEnded {
                             session_id: *session_id,
                             lap_number: *lap_number,
@@ -384,7 +384,7 @@ impl LapValidityDetector {
             } => (session_id, lap_number, started_at_ms),
         };
 
-        let duration_s = at_ms.wrapping_sub(started_at_ms) as f32 / 1000.0;
+        let duration_s = duration_s_between_ms(started_at_ms, at_ms);
         self.pit_state = PitState::NotInPit {
             entry_candidate_started_at_ms: None,
         };
@@ -399,6 +399,10 @@ impl LapValidityDetector {
 
 fn seconds_to_ms(seconds: f32) -> u32 {
     (seconds * 1_000.0).round() as u32
+}
+
+fn duration_s_between_ms(started_at_ms: u32, ended_at_ms: u32) -> f32 {
+    ended_at_ms.wrapping_sub(started_at_ms) as f32 / 1_000.0
 }
 
 #[cfg(test)]
@@ -739,6 +743,51 @@ mod tests {
         assert_eq!(lap_number, 4);
         assert_eq!(at_ms, 5_900);
         assert!((duration_s - 3.9).abs() < 0.01);
+    }
+
+    #[test]
+    fn rewind_and_pit_events_can_coexist() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage");
+        let mut detector = LapValidityDetector::new(LapValidityConfig::default());
+
+        detector
+            .process_packet(
+                &dash_packet_with_speed(1_000, 1, 400.0, 10.0, 10.0, 25.0),
+                &storage,
+                "0.1.0",
+            )
+            .expect("baseline");
+        let rewind_events = detector
+            .process_packet(
+                &dash_packet_with_speed(1_050, 1, 300.0, 10.5, 10.5, 24.0),
+                &storage,
+                "0.1.0",
+            )
+            .expect("rewind");
+        assert!(matches!(
+            rewind_events.as_slice(),
+            [LapValidityEvent::LapRewindDetected { .. }]
+        ));
+
+        detector
+            .process_packet(
+                &dash_packet_with_speed(2_000, 1, 302.0, 11.0, 11.0, 3.0),
+                &storage,
+                "0.1.0",
+            )
+            .expect("pit candidate");
+        let pit_events = detector
+            .process_packet(
+                &dash_packet_with_speed(5_100, 1, 304.0, 14.1, 14.1, 3.0),
+                &storage,
+                "0.1.0",
+            )
+            .expect("pit start");
+        assert!(matches!(
+            pit_events.as_slice(),
+            [LapValidityEvent::PitStopStarted { .. }]
+        ));
     }
 
     fn dash_packet(
