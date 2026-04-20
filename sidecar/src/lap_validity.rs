@@ -94,6 +94,7 @@ impl LapValidityDetector {
         storage: &Storage,
         sidecar_version: &str,
     ) -> Result<Vec<LapValidityEvent>, crate::storage::StorageError> {
+        let _was_in_race = matches!(self.session_state, SessionState::InRace);
         if packet.sled.is_race_on != 1 {
             self.session_state = SessionState::Idle;
             self.last_distance_traveled = Some(packet.distance_traveled);
@@ -103,9 +104,6 @@ impl LapValidityDetector {
         }
 
         self.session_state = SessionState::InRace;
-        if !matches!(self.session_state, SessionState::InRace) {
-            return Ok(Vec::new());
-        }
         let session_id = if let Some(existing) = self.current_session_id {
             existing
         } else {
