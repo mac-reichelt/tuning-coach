@@ -38,12 +38,15 @@ use tracing::{error, info, info_span};
 use tracing_subscriber::EnvFilter;
 
 mod lap_validity;
+mod session_state;
 mod storage;
 mod telemetry;
 
 const SCHEMA_VERSION: u16 = 1;
 const DEFAULT_TELEMETRY_HZ: u16 = 10;
 const MAX_TELEMETRY_HZ: u16 = 60;
+const DEFAULT_PAUSE_DEBOUNCE_MS: u64 = 2_000;
+const DEFAULT_PACKET_TIMEOUT_MS: u64 = 10_000;
 const PING_INTERVAL: Duration = Duration::from_secs(30);
 const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -63,6 +66,8 @@ struct AppConfig {
     telemetry_hz: u16,
     rewind_backward_jump_m: f32,
     session_reset_race_time_window_s: f32,
+    pause_debounce_ms: u64,
+    packet_timeout_ms: u64,
     bind_address: IpAddr,
     data_dir: PathBuf,
     log_level: String,
@@ -78,6 +83,8 @@ impl Default for AppConfig {
                 .rewind_backward_jump_m,
             session_reset_race_time_window_s: lap_validity::LapValidityConfig::default()
                 .session_reset_race_time_window_s,
+            pause_debounce_ms: DEFAULT_PAUSE_DEBOUNCE_MS,
+            packet_timeout_ms: DEFAULT_PACKET_TIMEOUT_MS,
             bind_address: IpAddr::V4(Ipv4Addr::LOCALHOST),
             data_dir: PathBuf::from("./data"),
             log_level: "info".to_string(),
@@ -125,6 +132,16 @@ impl AppConfig {
         }
         .validate()
         .map_err(|err| Box::new(figment::Error::from(err)))?;
+        if self.pause_debounce_ms == 0 {
+            return Err(Box::new(figment::Error::from(
+                "pause_debounce_ms must be greater than 0",
+            )));
+        }
+        if self.packet_timeout_ms == 0 {
+            return Err(Box::new(figment::Error::from(
+                "packet_timeout_ms must be greater than 0",
+            )));
+        }
         Ok(())
     }
 }
@@ -140,6 +157,7 @@ struct AppState {
     recommendation_tx: broadcast::Sender<Value>,
     lap_validity_tx: broadcast::Sender<lap_validity::LapValidityEvent>,
     suppress_heuristics_tx: watch::Sender<bool>,
+    _session_state_tx: broadcast::Sender<session_state::SessionStateChanged>,
     telemetry_hz: u16,
 }
 
@@ -270,6 +288,7 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         recommendation_tx: broadcast::channel(256).0,
         lap_validity_tx: broadcast::channel(256).0,
         suppress_heuristics_tx: watch::channel(false).0,
+        _session_state_tx: broadcast::channel(256).0,
         telemetry_hz: config.telemetry_hz,
     };
 
@@ -335,6 +354,17 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
             session_reset_race_time_window_s: config.session_reset_race_time_window_s,
         },
     ));
+    let session_state_task = tokio::spawn(session_state::session_state_loop(
+        state.latest_telemetry_tx.subscribe(),
+        state._session_state_tx.clone(),
+        state.storage.clone(),
+        state.shutdown_tx.subscribe(),
+        session_state::SessionStateMachineConfig {
+            pause_debounce: Duration::from_millis(config.pause_debounce_ms),
+            packet_timeout: Duration::from_millis(config.packet_timeout_ms),
+        },
+        env!("CARGO_PKG_VERSION"),
+    ));
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal(state))
@@ -346,6 +376,9 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
     lap_validity_task
         .await
         .context("lap validity task panicked")??;
+    session_state_task
+        .await
+        .context("session state task panicked")??;
 
     Ok(())
 }
@@ -596,12 +629,14 @@ async fn shutdown_signal(state: AppState) {
 
 #[cfg(test)]
 mod tests {
-    use super::AppConfig;
     use serde_json::json;
     use serial_test::serial;
     use temp_env::with_var;
 
-    use super::{EventMessage, HelloMessage, SCHEMA_VERSION};
+    use super::{
+        AppConfig, EventMessage, HelloMessage, DEFAULT_PACKET_TIMEOUT_MS,
+        DEFAULT_PAUSE_DEBOUNCE_MS, SCHEMA_VERSION,
+    };
 
     #[test]
     #[serial]
@@ -633,6 +668,13 @@ mod tests {
             let result = AppConfig::from_sources(None, true);
             assert!(result.is_err());
         });
+    }
+
+    #[test]
+    fn config_default_session_timeouts_are_set() {
+        let config = AppConfig::default();
+        assert_eq!(config.pause_debounce_ms, DEFAULT_PAUSE_DEBOUNCE_MS);
+        assert_eq!(config.packet_timeout_ms, DEFAULT_PACKET_TIMEOUT_MS);
     }
 
     #[test]
