@@ -43,3 +43,11 @@ The sidecar stores SQLite data at `<data_dir>/tuning-coach.db` (default:
 To make a backup, stop the sidecar, then copy `tuning-coach.db` to a safe
 location. If you back up while the sidecar is running, copy
 `tuning-coach.db`, `tuning-coach.db-wal`, and `tuning-coach.db-shm` together.
+
+## Runtime config defaults
+
+You can override config values with `TUNING_COACH_*` environment variables.
+Session-state defaults:
+
+- `TUNING_COACH_PAUSE_DEBOUNCE_MS=2000`
+- `TUNING_COACH_PACKET_TIMEOUT_MS=10000`
