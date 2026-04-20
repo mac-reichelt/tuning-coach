@@ -107,7 +107,8 @@ impl LapValidityDetector {
         let session_id = if let Some(existing) = self.current_session_id {
             existing
         } else {
-            let created = storage.start_session(Some(i32::from(packet.sled.car_ordinal)), sidecar_version)?;
+            let created =
+                storage.start_session(Some(i32::from(packet.sled.car_ordinal)), sidecar_version)?;
             self.current_session_id = Some(created);
             created
         };
@@ -163,7 +164,8 @@ impl LapValidityDetector {
         }
 
         storage.end_session(prior_session_id)?;
-        let new_session_id = storage.start_session(Some(i32::from(packet.sled.car_ordinal)), sidecar_version)?;
+        let new_session_id =
+            storage.start_session(Some(i32::from(packet.sled.car_ordinal)), sidecar_version)?;
         storage.ensure_lap(new_session_id, packet.lap_number, packet.sled.timestamp_ms)?;
 
         self.current_session_id = Some(new_session_id);
