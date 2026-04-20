@@ -1,5 +1,6 @@
 use std::{
     net::TcpListener,
+    path::Path,
     process::Child,
     time::{Duration, Instant},
 };
@@ -112,6 +113,56 @@ async fn sidecar_rejects_client_schema_version_mismatch() {
     assert!(close_frame.reason.contains("schema_version mismatch"));
 }
 
+#[tokio::test]
+async fn sidecar_emits_lap_dirty_detected_and_persists_invalid_lap() {
+    let ws_port = find_free_port();
+    let udp_port = find_free_port();
+    let temp_data_dir = tempfile::tempdir().expect("temp dir");
+    let _sidecar = SidecarProcessGuard {
+        child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
+            .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
+            .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
+            .env("TUNING_COACH_DATA_DIR", temp_data_dir.path())
+            .spawn()
+            .expect("sidecar should start"),
+    };
+
+    wait_for_health(ws_port).await;
+
+    let ws_url = format!("ws://127.0.0.1:{ws_port}/ws");
+    let (mut ws_client, _) = connect_async(&ws_url).await.expect("client connects");
+    let hello = next_json_text_frame(&mut ws_client).await;
+    assert_eq!(hello["type"], "hello");
+
+    let packet = wall_contact_packet_bytes();
+    let udp_socket = tokio::net::UdpSocket::bind("127.0.0.1:0")
+        .await
+        .expect("udp socket should bind");
+    udp_socket
+        .send_to(&packet, format!("127.0.0.1:{udp_port}"))
+        .await
+        .expect("send packet");
+
+    let dirty = wait_for_event(&mut ws_client, "lap_dirty_detected").await;
+    assert_eq!(dirty["data"]["reason"]["code"], "WallContact");
+    assert_eq!(dirty["data"]["reason"]["best_effort"], false);
+
+    let db_path = temp_data_dir.path().join("tuning-coach.db");
+    let row = timeout(Duration::from_secs(5), async {
+        loop {
+            match read_first_lap_row(&db_path) {
+                Some(row) => break row,
+                None => sleep(Duration::from_millis(50)).await,
+            }
+        }
+    })
+    .await
+    .expect("lap row should be persisted");
+
+    assert_eq!(row.0, 0);
+    assert_eq!(row.1.as_deref(), Some("WallContact"));
+}
+
 async fn wait_for_health(ws_port: u16) {
     let health_url = format!("http://127.0.0.1:{ws_port}/health");
     let client = reqwest::Client::new();
@@ -173,6 +224,47 @@ async fn wait_for_event(
 fn find_free_port() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind free local port");
     listener.local_addr().expect("local addr").port()
+}
+
+fn wall_contact_packet_bytes() -> Vec<u8> {
+    let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("dash_packet_01.bin");
+    let mut bytes = std::fs::read(fixture_path).expect("fixture should load");
+
+    write_i32_le(&mut bytes, 0, 1);
+    write_u32_le(&mut bytes, 4, 1_000);
+    write_f32_le(&mut bytes, 20, 11.0 * 9.81);
+    write_u16_le(&mut bytes, 300, 1);
+
+    bytes
+}
+
+fn write_f32_le(bytes: &mut [u8], offset: usize, value: f32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_i32_le(bytes: &mut [u8], offset: usize, value: i32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_u32_le(bytes: &mut [u8], offset: usize, value: u32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_u16_le(bytes: &mut [u8], offset: usize, value: u16) {
+    bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+}
+
+fn read_first_lap_row(db_path: &Path) -> Option<(i64, Option<String>)> {
+    let conn = rusqlite::Connection::open(db_path).ok()?;
+    conn.query_row(
+        "SELECT valid, dirty_reason FROM laps ORDER BY id ASC LIMIT 1",
+        [],
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)),
+    )
+    .ok()
 }
 
 struct SidecarProcessGuard {
