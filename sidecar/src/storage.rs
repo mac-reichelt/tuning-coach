@@ -39,6 +39,31 @@ impl Storage {
 
         Ok(Self { pool })
     }
+
+    pub(crate) fn start_session(
+        &self,
+        car_ordinal: Option<i32>,
+        sidecar_version: &str,
+    ) -> Result<i64, StorageError> {
+        let conn = self.pool.get()?;
+        conn.execute(
+            "INSERT INTO sessions (started_at, car_ordinal, sidecar_version)
+             VALUES (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?1, ?2)",
+            params![car_ordinal, sidecar_version],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub(crate) fn end_session(&self, session_id: i64) -> Result<(), StorageError> {
+        let conn = self.pool.get()?;
+        conn.execute(
+            "UPDATE sessions
+             SET ended_at = COALESCE(ended_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+             WHERE id = ?1",
+            params![session_id],
+        )?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Error)]
@@ -271,7 +296,7 @@ mod tests {
     use rusqlite::Connection;
     use tempfile::TempDir;
 
-    use super::run_migrations_from_dir;
+    use super::{run_migrations_from_dir, Storage};
 
     #[test]
     fn migration_runner_applies_and_is_idempotent() {
@@ -349,5 +374,29 @@ mod tests {
             )
             .expect("query session");
         assert_eq!(track_id, "silverstone");
+    }
+
+    #[test]
+    fn storage_start_and_end_session_persists_lifecycle() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage should open");
+        let session_id = storage
+            .start_session(Some(77), "0.1.0")
+            .expect("session should insert");
+
+        storage
+            .end_session(session_id)
+            .expect("session should close");
+
+        let conn = Connection::open(temp.path().join("tuning-coach.db")).expect("open sqlite");
+        let (car_ordinal, ended_at): (Option<i64>, Option<String>) = conn
+            .query_row(
+                "SELECT car_ordinal, ended_at FROM sessions WHERE id = ?1",
+                rusqlite::params![session_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("query session");
+        assert_eq!(car_ordinal, Some(77));
+        assert!(ended_at.is_some());
     }
 }

@@ -28,7 +28,7 @@ impl TelemetryPacket {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct SledPacket {
     pub is_race_on: i32,
     pub timestamp_ms: u32,
@@ -90,7 +90,7 @@ pub struct SledPacket {
     pub num_cylinders: i32,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct DashPacket {
     pub sled: SledPacket,
     pub position_x: f32,
