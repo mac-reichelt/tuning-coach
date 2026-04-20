@@ -72,6 +72,7 @@ bumps `schema_version`.
 | `session_ended`    | `IsRaceOn` 1 → 0                 | Never dropped                         |
 | `telemetry`        | Streaming (default 10 Hz)        | **Oldest dropped** if client is slow  |
 | `lap_completed`    | At each lap boundary             | Never dropped                         |
+| `lap_dirty_detected` | When a lap is flagged dirty      | Never dropped                         |
 | `recommendation`   | When the heuristics engine emits | Never dropped                         |
 | `pong`             | Reply to a client `ping`         | Never dropped                         |
 | `error`            | On client protocol violations    | Never dropped                         |

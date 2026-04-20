@@ -1,19 +1,40 @@
+use std::collections::{HashSet, VecDeque};
+
 use serde::Serialize;
 
 use crate::{storage::Storage, telemetry::DashPacket};
 
 const DEFAULT_REWIND_BACKWARD_JUMP_M: f32 = 50.0;
 const DEFAULT_SESSION_RESET_RACE_TIME_WINDOW_S: f32 = 2.0;
+const DEFAULT_OFF_TRACK_WINDOW_MS: u32 = 500;
+const DEFAULT_OFF_TRACK_MIN_WHEELS: u8 = 2;
+const DEFAULT_SURFACE_RUMBLE_THRESHOLD: f32 = 0.35;
+const DEFAULT_SURFACE_RUMBLE_WINDOW_PACKETS: usize = 5;
+const DEFAULT_WHEEL_ON_RUMBLE_MIN: f32 = 0.1;
+const DEFAULT_WALL_CONTACT_G_THRESHOLD: f32 = 10.0;
+const DEFAULT_CORNER_CUT_SPEED_KPH_MIN: f32 = 30.0;
+const DEFAULT_CORNER_CUT_COMBINED_SLIP_THRESHOLD: f32 = 1.0;
+const STEER_INPUT_MAX_ABS: f32 = 127.0;
+const DEFAULT_CORNER_CUT_MAX_ABS_STEER_NORM: f32 = 10.0 / STEER_INPUT_MAX_ABS;
 const DEFAULT_PIT_ENTRY_SPEED_THRESHOLD_KPH: f32 = 20.0;
 const DEFAULT_PIT_ENTRY_DWELL_S: f32 = 3.0;
 const DEFAULT_PIT_EXIT_SPEED_THRESHOLD_KPH: f32 = 40.0;
 const DEFAULT_PIT_EXIT_DWELL_S: f32 = 1.0;
 const MAX_PACKET_GAP_MS_FOR_REWIND: u32 = 10_000;
+const GRAVITY_MPS2: f32 = 9.81;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LapValidityConfig {
     pub rewind_backward_jump_m: f32,
     pub session_reset_race_time_window_s: f32,
+    pub off_track_window_ms: u32,
+    pub off_track_min_wheels: u8,
+    pub surface_rumble_threshold: f32,
+    pub surface_rumble_window_packets: usize,
+    pub wall_contact_g_threshold: f32,
+    pub corner_cut_speed_kph_min: f32,
+    pub corner_cut_combined_slip_threshold: f32,
+    pub corner_cut_max_abs_steer_norm: f32,
     pub pit_entry_speed_threshold_kph: f32,
     pub pit_entry_dwell_s: f32,
     pub pit_exit_speed_threshold_kph: f32,
@@ -25,6 +46,14 @@ impl Default for LapValidityConfig {
         Self {
             rewind_backward_jump_m: DEFAULT_REWIND_BACKWARD_JUMP_M,
             session_reset_race_time_window_s: DEFAULT_SESSION_RESET_RACE_TIME_WINDOW_S,
+            off_track_window_ms: DEFAULT_OFF_TRACK_WINDOW_MS,
+            off_track_min_wheels: DEFAULT_OFF_TRACK_MIN_WHEELS,
+            surface_rumble_threshold: DEFAULT_SURFACE_RUMBLE_THRESHOLD,
+            surface_rumble_window_packets: DEFAULT_SURFACE_RUMBLE_WINDOW_PACKETS,
+            wall_contact_g_threshold: DEFAULT_WALL_CONTACT_G_THRESHOLD,
+            corner_cut_speed_kph_min: DEFAULT_CORNER_CUT_SPEED_KPH_MIN,
+            corner_cut_combined_slip_threshold: DEFAULT_CORNER_CUT_COMBINED_SLIP_THRESHOLD,
+            corner_cut_max_abs_steer_norm: DEFAULT_CORNER_CUT_MAX_ABS_STEER_NORM,
             pit_entry_speed_threshold_kph: DEFAULT_PIT_ENTRY_SPEED_THRESHOLD_KPH,
             pit_entry_dwell_s: DEFAULT_PIT_ENTRY_DWELL_S,
             pit_exit_speed_threshold_kph: DEFAULT_PIT_EXIT_SPEED_THRESHOLD_KPH,
@@ -42,6 +71,34 @@ impl LapValidityConfig {
             && self.session_reset_race_time_window_s > 0.0)
         {
             return Err("session_reset_race_time_window_s must be > 0".to_string());
+        }
+        if self.off_track_window_ms == 0 {
+            return Err("off_track_window_ms must be > 0".to_string());
+        }
+        if !(1..=4).contains(&self.off_track_min_wheels) {
+            return Err("off_track_min_wheels must be between 1 and 4".to_string());
+        }
+        if !(self.surface_rumble_threshold.is_finite() && self.surface_rumble_threshold >= 0.0) {
+            return Err("surface_rumble_threshold must be >= 0".to_string());
+        }
+        if self.surface_rumble_window_packets == 0 {
+            return Err("surface_rumble_window_packets must be > 0".to_string());
+        }
+        if !(self.wall_contact_g_threshold.is_finite() && self.wall_contact_g_threshold > 0.0) {
+            return Err("wall_contact_g_threshold must be > 0".to_string());
+        }
+        if !(self.corner_cut_speed_kph_min.is_finite() && self.corner_cut_speed_kph_min > 0.0) {
+            return Err("corner_cut_speed_kph_min must be > 0".to_string());
+        }
+        if !(self.corner_cut_combined_slip_threshold.is_finite()
+            && self.corner_cut_combined_slip_threshold > 0.0)
+        {
+            return Err("corner_cut_combined_slip_threshold must be > 0".to_string());
+        }
+        if !(self.corner_cut_max_abs_steer_norm.is_finite()
+            && (0.0..=1.0).contains(&self.corner_cut_max_abs_steer_norm))
+        {
+            return Err("corner_cut_max_abs_steer_norm must be in [0, 1]".to_string());
         }
         if !(self.pit_entry_speed_threshold_kph.is_finite()
             && self.pit_entry_speed_threshold_kph > 0.0)
@@ -68,14 +125,71 @@ impl LapValidityConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, Hash)]
+pub enum DirtyReasonCode {
+    #[serde(rename = "OffTrack")]
+    OffTrack,
+    #[serde(rename = "WallContact")]
+    WallContact,
+    #[serde(rename = "CornerCut")]
+    CornerCut,
+    #[serde(rename = "Rewind")]
+    Rewind,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, Hash)]
+pub struct DirtyReason {
+    pub code: DirtyReasonCode,
+    pub best_effort: bool,
+}
+
+impl DirtyReason {
+    fn off_track() -> Self {
+        Self {
+            code: DirtyReasonCode::OffTrack,
+            best_effort: false,
+        }
+    }
+
+    fn wall_contact() -> Self {
+        Self {
+            code: DirtyReasonCode::WallContact,
+            best_effort: false,
+        }
+    }
+
+    fn corner_cut() -> Self {
+        Self {
+            code: DirtyReasonCode::CornerCut,
+            best_effort: true,
+        }
+    }
+
+    fn as_db_reason(self) -> &'static str {
+        match self.code {
+            DirtyReasonCode::OffTrack => "OffTrack",
+            DirtyReasonCode::WallContact => "WallContact",
+            DirtyReasonCode::CornerCut => "CornerCut",
+            DirtyReasonCode::Rewind => "Rewind",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(tag = "event", rename_all = "snake_case")]
+#[allow(clippy::enum_variant_names)]
 pub enum LapValidityEvent {
     LapRewindDetected {
         session_id: i64,
         lap_number: u16,
         approx_distance_rewound_m: f32,
         at_ms: u32,
+    },
+    LapDirtyDetected {
+        lap_id: i64,
+        reason: DirtyReason,
+        at_ms: u32,
+        lap_number: u16,
     },
     SessionResetDetected {
         prior_session_id: i64,
@@ -122,6 +236,9 @@ pub struct LapValidityDetector {
     current_session_id: Option<i64>,
     current_lap_number: Option<u16>,
     suppress_current_lap_analysis: bool,
+    current_lap_dirty_reasons: HashSet<DirtyReasonCode>,
+    pending_off_track_since_ms: Option<u32>,
+    surface_rumble_window: VecDeque<f32>,
     last_distance_traveled: Option<f32>,
     last_timestamp_ms: Option<u32>,
     last_current_race_time: Option<f32>,
@@ -136,6 +253,9 @@ impl LapValidityDetector {
             current_session_id: None,
             current_lap_number: None,
             suppress_current_lap_analysis: false,
+            current_lap_dirty_reasons: HashSet::new(),
+            pending_off_track_since_ms: None,
+            surface_rumble_window: VecDeque::new(),
             last_distance_traveled: None,
             last_timestamp_ms: None,
             last_current_race_time: None,
@@ -156,12 +276,12 @@ impl LapValidityDetector {
         sidecar_version: &str,
     ) -> Result<Vec<LapValidityEvent>, crate::storage::StorageError> {
         let mut events = Vec::new();
-        let _was_in_race = matches!(self.session_state, SessionState::InRace);
         if packet.sled.is_race_on != 1 {
             if let Some(pit_ended_event) = self.close_open_pit_stop(packet.sled.timestamp_ms) {
                 events.push(pit_ended_event);
             }
             self.session_state = SessionState::Idle;
+            self.reset_transient_signals();
             self.last_distance_traveled = Some(packet.distance_traveled);
             self.last_timestamp_ms = Some(packet.sled.timestamp_ms);
             self.last_current_race_time = Some(packet.current_race_time);
@@ -190,10 +310,18 @@ impl LapValidityDetector {
             )?;
             self.current_lap_number = Some(packet.lap_number);
             self.suppress_current_lap_analysis = false;
+            self.current_lap_dirty_reasons.clear();
+            self.reset_transient_signals();
         }
 
         if let Some(rewind_event) = self.detect_rewind(packet, storage, active_session_id)? {
             events.push(rewind_event);
+        }
+
+        if let Some(current_lap_number) = self.current_lap_number {
+            let mut dirty_events =
+                self.detect_dirty_reasons(packet, storage, active_session_id, current_lap_number)?;
+            events.append(&mut dirty_events);
         }
         if let Some(pit_event) = self.detect_pit_stop(packet, storage, active_session_id)? {
             events.push(pit_event);
@@ -237,6 +365,8 @@ impl LapValidityDetector {
         self.current_session_id = Some(new_session_id);
         self.current_lap_number = Some(packet.lap_number);
         self.suppress_current_lap_analysis = false;
+        self.current_lap_dirty_reasons.clear();
+        self.reset_transient_signals();
         self.last_distance_traveled = None;
         self.pit_state = PitState::NotInPit {
             entry_candidate_started_at_ms: None,
@@ -272,6 +402,8 @@ impl LapValidityDetector {
         }
 
         storage.mark_lap_rewind(session_id, packet.lap_number)?;
+        self.current_lap_dirty_reasons
+            .insert(DirtyReasonCode::Rewind);
         self.suppress_current_lap_analysis = true;
 
         Ok(Some(LapValidityEvent::LapRewindDetected {
@@ -280,6 +412,143 @@ impl LapValidityDetector {
             approx_distance_rewound_m: -distance_delta,
             at_ms: packet.sled.timestamp_ms,
         }))
+    }
+
+    fn detect_dirty_reasons(
+        &mut self,
+        packet: &DashPacket,
+        storage: &Storage,
+        session_id: i64,
+        lap_number: u16,
+    ) -> Result<Vec<LapValidityEvent>, crate::storage::StorageError> {
+        let mut reasons = Vec::new();
+
+        if self.off_track_triggered(packet)
+            && !self
+                .current_lap_dirty_reasons
+                .contains(&DirtyReasonCode::OffTrack)
+        {
+            reasons.push(DirtyReason::off_track());
+        }
+
+        if self.wall_contact_triggered(packet)
+            && !self
+                .current_lap_dirty_reasons
+                .contains(&DirtyReasonCode::WallContact)
+        {
+            reasons.push(DirtyReason::wall_contact());
+        }
+
+        if self.corner_cut_triggered(packet)
+            && !self
+                .current_lap_dirty_reasons
+                .contains(&DirtyReasonCode::CornerCut)
+        {
+            reasons.push(DirtyReason::corner_cut());
+        }
+
+        if reasons.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        self.suppress_current_lap_analysis = true;
+        let mut events = Vec::with_capacity(reasons.len());
+        for reason in reasons {
+            let lap_id = storage.mark_lap_dirty(session_id, lap_number, reason.as_db_reason())?;
+            self.current_lap_dirty_reasons.insert(reason.code);
+            events.push(LapValidityEvent::LapDirtyDetected {
+                lap_id,
+                reason,
+                at_ms: packet.sled.timestamp_ms,
+                lap_number,
+            });
+        }
+
+        Ok(events)
+    }
+
+    fn off_track_triggered(&mut self, packet: &DashPacket) -> bool {
+        let wheel_count = [
+            packet.sled.wheel_on_rumble_strip_front_left,
+            packet.sled.wheel_on_rumble_strip_front_right,
+            packet.sled.wheel_on_rumble_strip_rear_left,
+            packet.sled.wheel_on_rumble_strip_rear_right,
+        ]
+        .into_iter()
+        .filter(|value| (*value as f32) > DEFAULT_WHEEL_ON_RUMBLE_MIN)
+        .count() as u8;
+
+        let rumble_mean = [
+            packet.sled.surface_rumble_front_left,
+            packet.sled.surface_rumble_front_right,
+            packet.sled.surface_rumble_rear_left,
+            packet.sled.surface_rumble_rear_right,
+        ]
+        .into_iter()
+        .map(|value| value.max(0.0))
+        .sum::<f32>()
+            / 4.0;
+
+        self.surface_rumble_window.push_back(rumble_mean);
+        while self.surface_rumble_window.len() > self.config.surface_rumble_window_packets {
+            self.surface_rumble_window.pop_front();
+        }
+        let smoothed_rumble = if self.surface_rumble_window.is_empty() {
+            0.0
+        } else {
+            self.surface_rumble_window.iter().sum::<f32>() / self.surface_rumble_window.len() as f32
+        };
+
+        let off_track_signal = wheel_count >= self.config.off_track_min_wheels
+            || smoothed_rumble >= self.config.surface_rumble_threshold;
+
+        if !off_track_signal {
+            self.pending_off_track_since_ms = None;
+            return false;
+        }
+
+        let since_ms = self
+            .pending_off_track_since_ms
+            .get_or_insert(packet.sled.timestamp_ms);
+        packet.sled.timestamp_ms.wrapping_sub(*since_ms) >= self.config.off_track_window_ms
+    }
+
+    fn wall_contact_triggered(&self, packet: &DashPacket) -> bool {
+        let threshold = self.config.wall_contact_g_threshold * GRAVITY_MPS2;
+        [
+            packet.sled.acceleration_x,
+            packet.sled.acceleration_y,
+            packet.sled.acceleration_z,
+        ]
+        .into_iter()
+        .any(|axis| axis.abs() >= threshold)
+    }
+
+    fn corner_cut_triggered(&self, packet: &DashPacket) -> bool {
+        if packet.speed * 3.6 <= self.config.corner_cut_speed_kph_min {
+            return false;
+        }
+
+        let max_combined_slip = [
+            packet.sled.tire_combined_slip_front_left,
+            packet.sled.tire_combined_slip_front_right,
+            packet.sled.tire_combined_slip_rear_left,
+            packet.sled.tire_combined_slip_rear_right,
+        ]
+        .into_iter()
+        .map(f32::abs)
+        .fold(0.0, f32::max);
+        if max_combined_slip < self.config.corner_cut_combined_slip_threshold {
+            return false;
+        }
+
+        let steer_norm = (packet.steer as f32 / STEER_INPUT_MAX_ABS).abs();
+        steer_norm <= self.config.corner_cut_max_abs_steer_norm
+    }
+
+    fn reset_transient_signals(&mut self) {
+        self.pending_off_track_since_ms = None;
+        self.surface_rumble_window.clear();
     }
 
     pub fn finalize(&mut self) -> Result<Vec<LapValidityEvent>, crate::storage::StorageError> {
@@ -351,13 +620,14 @@ impl LapValidityDetector {
                         exit_candidate_started_at_ms.get_or_insert(packet.sled.timestamp_ms);
                     let dwell_ms = packet.sled.timestamp_ms.wrapping_sub(*exit_start);
                     if dwell_ms >= exit_dwell_ms {
-                        let duration_s =
-                            duration_s_between_ms(*started_at_ms, packet.sled.timestamp_ms);
                         let event = LapValidityEvent::PitStopEnded {
                             session_id: *session_id,
                             lap_number: *lap_number,
                             at_ms: packet.sled.timestamp_ms,
-                            duration_s,
+                            duration_s: duration_s_between_ms(
+                                *started_at_ms,
+                                packet.sled.timestamp_ms,
+                            ),
                         };
                         self.pit_state = PitState::NotInPit {
                             entry_candidate_started_at_ms: None,
@@ -384,7 +654,6 @@ impl LapValidityDetector {
             } => (session_id, lap_number, started_at_ms),
         };
 
-        let duration_s = duration_s_between_ms(started_at_ms, at_ms);
         self.pit_state = PitState::NotInPit {
             entry_candidate_started_at_ms: None,
         };
@@ -392,7 +661,7 @@ impl LapValidityDetector {
             session_id,
             lap_number,
             at_ms,
-            duration_s,
+            duration_s: duration_s_between_ms(started_at_ms, at_ms),
         })
     }
 }
@@ -409,7 +678,7 @@ fn duration_s_between_ms(started_at_ms: u32, ended_at_ms: u32) -> f32 {
 mod tests {
     use tempfile::TempDir;
 
-    use super::{LapValidityConfig, LapValidityDetector, LapValidityEvent};
+    use super::{DirtyReasonCode, LapValidityConfig, LapValidityDetector, LapValidityEvent};
     use crate::{storage::Storage, telemetry::DashPacket, telemetry::SledPacket};
 
     #[test]
@@ -520,6 +789,221 @@ mod tests {
     }
 
     #[test]
+    fn off_track_trigger_marks_lap_dirty_after_window() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage");
+        let mut detector = LapValidityDetector::new(LapValidityConfig::default());
+
+        detector
+            .process_packet(&off_track_packet(1_000, 1), &storage, "0.1.0")
+            .expect("first");
+        detector
+            .process_packet(&off_track_packet(1_250, 1), &storage, "0.1.0")
+            .expect("second");
+        let events = detector
+            .process_packet(&off_track_packet(1_550, 1), &storage, "0.1.0")
+            .expect("third");
+
+        assert_eq!(events.len(), 1);
+        let LapValidityEvent::LapDirtyDetected {
+            lap_id: _,
+            reason,
+            at_ms,
+            lap_number,
+        } = &events[0]
+        else {
+            panic!("expected dirty event")
+        };
+        assert_eq!(reason.code, DirtyReasonCode::OffTrack);
+        assert!(!reason.best_effort);
+        assert_eq!(*lap_number, 1);
+        assert_eq!(*at_ms, 1_550);
+
+        let session_id = first_session_id(&storage);
+        let (valid, dirty_reason) = storage
+            .read_lap_validity(session_id, 1)
+            .expect("lap validity");
+        assert!(!valid);
+        assert_eq!(dirty_reason.as_deref(), Some("OffTrack"));
+    }
+
+    #[test]
+    fn wall_contact_trigger_marks_lap_dirty() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage");
+        let mut detector = LapValidityDetector::new(LapValidityConfig::default());
+
+        let mut packet = dash_packet(1_000, 1, 10.0, 1.0, 1.0);
+        packet.sled.acceleration_x = 11.0 * 9.81;
+
+        let events = detector
+            .process_packet(&packet, &storage, "0.1.0")
+            .expect("packet");
+        assert_eq!(events.len(), 1);
+        let LapValidityEvent::LapDirtyDetected { reason, .. } = &events[0] else {
+            panic!("expected dirty event")
+        };
+        assert_eq!(reason.code, DirtyReasonCode::WallContact);
+        assert!(!reason.best_effort);
+    }
+
+    #[test]
+    fn corner_cut_trigger_marks_lap_dirty_as_best_effort() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage");
+        let mut detector = LapValidityDetector::new(LapValidityConfig::default());
+
+        let mut packet = dash_packet(1_000, 1, 10.0, 1.0, 1.0);
+        packet.speed = 40.0;
+        packet.steer = 0;
+        packet.sled.tire_combined_slip_front_left = 1.4;
+
+        let events = detector
+            .process_packet(&packet, &storage, "0.1.0")
+            .expect("packet");
+        assert_eq!(events.len(), 1);
+        let LapValidityEvent::LapDirtyDetected { reason, .. } = &events[0] else {
+            panic!("expected dirty event")
+        };
+        assert_eq!(reason.code, DirtyReasonCode::CornerCut);
+        assert!(reason.best_effort);
+    }
+
+    #[test]
+    fn dirty_reason_is_sticky_and_additional_reasons_are_appended() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage");
+        let mut detector = LapValidityDetector::new(LapValidityConfig::default());
+
+        let mut wall_contact = dash_packet(1_000, 1, 10.0, 1.0, 1.0);
+        wall_contact.sled.acceleration_y = 12.0 * 9.81;
+
+        let mut corner_cut = dash_packet(1_200, 1, 20.0, 2.0, 2.0);
+        corner_cut.speed = 45.0;
+        corner_cut.sled.tire_combined_slip_front_right = 1.2;
+        corner_cut.steer = 0;
+
+        let first_events = detector
+            .process_packet(&wall_contact, &storage, "0.1.0")
+            .expect("wall contact");
+        assert_eq!(first_events.len(), 1);
+
+        let second_events = detector
+            .process_packet(&corner_cut, &storage, "0.1.0")
+            .expect("corner cut");
+        assert_eq!(second_events.len(), 1);
+
+        let session_id = first_session_id(&storage);
+        let (valid, dirty_reason) = storage
+            .read_lap_validity(session_id, 1)
+            .expect("lap validity");
+        assert!(!valid);
+        assert_eq!(dirty_reason.as_deref(), Some("WallContact"));
+
+        let dirty_reasons = storage
+            .read_lap_dirty_reasons(session_id, 1)
+            .expect("dirty reasons");
+        assert_eq!(dirty_reasons, vec!["WallContact", "CornerCut"]);
+    }
+
+    #[test]
+    fn short_surface_rumble_noise_is_debounced() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage");
+        let mut detector = LapValidityDetector::new(LapValidityConfig::default());
+
+        detector
+            .process_packet(&surface_rumble_packet(1_000, 1, 0.8), &storage, "0.1.0")
+            .expect("first");
+        detector
+            .process_packet(&surface_rumble_packet(1_120, 1, 0.9), &storage, "0.1.0")
+            .expect("second");
+        let events = detector
+            .process_packet(&surface_rumble_packet(1_170, 1, 0.0), &storage, "0.1.0")
+            .expect("third");
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn pause_resume_without_dirty_condition_emits_no_spurious_event() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage");
+        let mut detector = LapValidityDetector::new(LapValidityConfig::default());
+
+        detector
+            .process_packet(&dash_packet(1_000, 1, 10.0, 1.0, 1.0), &storage, "0.1.0")
+            .expect("in race");
+
+        let mut paused = dash_packet(1_100, 1, 10.0, 1.1, 1.1);
+        paused.sled.is_race_on = 0;
+        let pause_events = detector
+            .process_packet(&paused, &storage, "0.1.0")
+            .expect("pause");
+        assert!(pause_events.is_empty());
+
+        let resume_events = detector
+            .process_packet(&dash_packet(1_200, 1, 12.0, 1.2, 1.2), &storage, "0.1.0")
+            .expect("resume");
+        assert!(resume_events.is_empty());
+    }
+
+    #[test]
+    fn dirty_state_is_preserved_across_pause_resume() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage");
+        let mut detector = LapValidityDetector::new(LapValidityConfig::default());
+
+        let mut contact = dash_packet(1_000, 1, 10.0, 1.0, 1.0);
+        contact.sled.acceleration_z = 10.5 * 9.81;
+        detector
+            .process_packet(&contact, &storage, "0.1.0")
+            .expect("contact");
+
+        let mut paused = dash_packet(1_100, 1, 10.0, 1.1, 1.1);
+        paused.sled.is_race_on = 0;
+        detector
+            .process_packet(&paused, &storage, "0.1.0")
+            .expect("pause");
+
+        let resume_events = detector
+            .process_packet(&dash_packet(1_200, 1, 12.0, 1.2, 1.2), &storage, "0.1.0")
+            .expect("resume");
+        assert!(resume_events.is_empty());
+
+        let session_id = first_session_id(&storage);
+        let (valid, dirty_reason) = storage
+            .read_lap_validity(session_id, 1)
+            .expect("lap validity");
+        assert!(!valid);
+        assert_eq!(dirty_reason.as_deref(), Some("WallContact"));
+    }
+
+    #[test]
+    fn dirty_lap_remains_invalid_when_lap_completes() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage");
+        let mut detector = LapValidityDetector::new(LapValidityConfig::default());
+
+        let mut contact = dash_packet(1_000, 1, 10.0, 1.0, 1.0);
+        contact.sled.acceleration_x = 11.0 * 9.81;
+        detector
+            .process_packet(&contact, &storage, "0.1.0")
+            .expect("contact");
+
+        detector
+            .process_packet(&dash_packet(2_000, 2, 100.0, 0.2, 60.0), &storage, "0.1.0")
+            .expect("lap boundary");
+
+        let session_id = first_session_id(&storage);
+        let (valid, dirty_reason) = storage
+            .read_lap_validity(session_id, 1)
+            .expect("lap 1 validity");
+        assert!(!valid);
+        assert_eq!(dirty_reason.as_deref(), Some("WallContact"));
+    }
+
+    #[test]
     fn detects_pit_start_and_end_marks_lap_invalid() {
         let temp = TempDir::new().expect("temp dir");
         let storage = Storage::open(temp.path()).expect("storage");
@@ -596,6 +1080,11 @@ mod tests {
             .expect("lap validity");
         assert!(!valid);
         assert_eq!(dirty_reason.as_deref(), Some("PitStop"));
+
+        let dirty_reasons = storage
+            .read_lap_dirty_reasons(session_id, lap_number)
+            .expect("dirty reasons");
+        assert_eq!(dirty_reasons, vec!["PitStop"]);
     }
 
     #[test]
@@ -788,6 +1277,27 @@ mod tests {
             pit_events.as_slice(),
             [LapValidityEvent::PitStopStarted { .. }]
         ));
+    }
+
+    fn off_track_packet(timestamp_ms: u32, lap_number: u16) -> DashPacket {
+        let mut packet = dash_packet(timestamp_ms, lap_number, 10.0, 1.0, 1.0);
+        packet.sled.wheel_on_rumble_strip_front_left = 1;
+        packet.sled.wheel_on_rumble_strip_front_right = 1;
+        packet
+    }
+
+    fn surface_rumble_packet(timestamp_ms: u32, lap_number: u16, rumble: f32) -> DashPacket {
+        let mut packet = dash_packet(timestamp_ms, lap_number, 10.0, 1.0, 1.0);
+        packet.sled.surface_rumble_front_left = rumble;
+        packet.sled.surface_rumble_front_right = rumble;
+        packet.sled.surface_rumble_rear_left = rumble;
+        packet.sled.surface_rumble_rear_right = rumble;
+        packet
+    }
+
+    fn first_session_id(storage: &Storage) -> i64 {
+        assert_eq!(storage.count_sessions().expect("session count"), 1);
+        storage.first_session_id().expect("first session id")
     }
 
     fn dash_packet(
