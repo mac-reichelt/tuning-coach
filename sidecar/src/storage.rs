@@ -12,7 +12,6 @@ use thiserror::Error;
 
 #[derive(Clone)]
 pub(crate) struct Storage {
-    #[allow(dead_code)]
     pool: Pool<SqliteConnectionManager>,
 }
 
@@ -63,6 +62,75 @@ impl Storage {
             params![session_id],
         )?;
         Ok(())
+    }
+
+    pub(crate) fn ensure_lap(
+        &self,
+        session_id: i64,
+        lap_number: u16,
+        started_t_ms: u32,
+    ) -> Result<(), StorageError> {
+        let conn = self.pool.get()?;
+        conn.execute(
+            "INSERT OR IGNORE INTO laps(session_id, lap_number, started_t_ms)
+                VALUES (?1, ?2, ?3)",
+            params![session_id, i64::from(lap_number), i64::from(started_t_ms)],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn mark_lap_rewind(
+        &self,
+        session_id: i64,
+        lap_number: u16,
+    ) -> Result<(), StorageError> {
+        let conn = self.pool.get()?;
+        conn.execute(
+            "UPDATE laps
+                SET valid = 0,
+                    dirty_reason = 'Rewind',
+                    is_reset = 1
+              WHERE session_id = ?1
+                AND lap_number = ?2",
+            params![session_id, i64::from(lap_number)],
+        )?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn read_lap_validity(
+        &self,
+        session_id: i64,
+        lap_number: u16,
+    ) -> Result<(bool, Option<String>), StorageError> {
+        let conn = self.pool.get()?;
+        let tuple = conn.query_row(
+            "SELECT valid, dirty_reason
+               FROM laps
+              WHERE session_id = ?1
+                AND lap_number = ?2",
+            params![session_id, i64::from(lap_number)],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)),
+        )?;
+        Ok((tuple.0 != 0, tuple.1))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn count_sessions(&self) -> Result<i64, StorageError> {
+        let conn = self.pool.get()?;
+        conn.query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
+            .map_err(StorageError::from)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn session_has_ended_at(&self, session_id: i64) -> Result<bool, StorageError> {
+        let conn = self.pool.get()?;
+        let ended_at = conn.query_row(
+            "SELECT ended_at FROM sessions WHERE id = ?1",
+            params![session_id],
+            |row| row.get::<_, Option<String>>(0),
+        )?;
+        Ok(ended_at.is_some())
     }
 }
 
