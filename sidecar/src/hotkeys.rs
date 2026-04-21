@@ -69,6 +69,10 @@ async fn mark_lap_dirty(State(state): State<AppState>) -> Result<impl IntoRespon
     let lap = state
         .current_lap_context()
         .ok_or(ApiError::NoLapInProgress)?;
+    state
+        .storage
+        .ensure_lap(session_id, lap.lap_number, lap.at_ms)
+        .map_err(ApiError::internal)?;
     let lap_id = state
         .storage
         .mark_lap_dirty_manual_override(session_id, lap.lap_number)
@@ -79,6 +83,15 @@ async fn mark_lap_dirty(State(state): State<AppState>) -> Result<impl IntoRespon
             _ => ApiError::internal(err),
         })?;
 
+    let payload = json!({
+        "lap_number": lap.lap_number,
+        "lap_id": lap_id,
+    });
+    let marked_dirty_at = state
+        .storage
+        .insert_hotkey_event(session_id, Some(lap.at_ms), "mark_lap_dirty", &payload)
+        .map_err(ApiError::internal)?;
+
     state.emit_lap_validity_event(LapValidityEvent::LapDirtyDetected {
         lap_id,
         reason: DirtyReason {
@@ -88,15 +101,6 @@ async fn mark_lap_dirty(State(state): State<AppState>) -> Result<impl IntoRespon
         at_ms: lap.at_ms,
         lap_number: lap.lap_number,
     });
-
-    let payload = json!({
-        "lap_number": lap.lap_number,
-        "lap_id": lap_id,
-    });
-    let marked_dirty_at = state
-        .storage
-        .insert_hotkey_event(session_id, Some(lap.at_ms), "mark_lap_dirty", &payload)
-        .map_err(ApiError::internal)?;
 
     Ok(Json(json!({
         "lap_number": lap.lap_number,
@@ -109,6 +113,10 @@ async fn mark_lap_clean(State(state): State<AppState>) -> Result<impl IntoRespon
     let lap = state
         .current_lap_context()
         .ok_or(ApiError::NoLapInProgress)?;
+    state
+        .storage
+        .ensure_lap(session_id, lap.lap_number, lap.at_ms)
+        .map_err(ApiError::internal)?;
     let overridden_reason = state
         .storage
         .mark_lap_clean(session_id, lap.lap_number)
@@ -129,12 +137,6 @@ async fn mark_lap_clean(State(state): State<AppState>) -> Result<impl IntoRespon
         }
     }
 
-    state.emit_lap_validity_event(LapValidityEvent::LapCleanMarked {
-        session_id,
-        lap_number: lap.lap_number,
-        at_ms: lap.at_ms,
-    });
-
     let payload = json!({
         "lap_number": lap.lap_number,
         "overridden_reason": overridden_reason
@@ -143,6 +145,12 @@ async fn mark_lap_clean(State(state): State<AppState>) -> Result<impl IntoRespon
         .storage
         .insert_hotkey_event(session_id, Some(lap.at_ms), "mark_lap_clean", &payload)
         .map_err(ApiError::internal)?;
+
+    state.emit_lap_validity_event(LapValidityEvent::LapCleanMarked {
+        session_id,
+        lap_number: lap.lap_number,
+        at_ms: lap.at_ms,
+    });
 
     Ok(Json(json!({
         "lap_number": lap.lap_number
@@ -154,6 +162,10 @@ async fn force_pit_start(State(state): State<AppState>) -> Result<impl IntoRespo
     let lap = state
         .current_lap_context()
         .ok_or(ApiError::NoLapInProgress)?;
+    state
+        .storage
+        .ensure_lap(session_id, lap.lap_number, lap.at_ms)
+        .map_err(ApiError::internal)?;
     if state.pit_runtime().is_some() {
         return Err(ApiError::AlreadyInPit);
     }
@@ -162,12 +174,6 @@ async fn force_pit_start(State(state): State<AppState>) -> Result<impl IntoRespo
         .storage
         .mark_lap_pit_stop(session_id, lap.lap_number)
         .map_err(ApiError::internal)?;
-    state.emit_lap_validity_event(LapValidityEvent::PitStopStarted {
-        session_id,
-        lap_number: lap.lap_number,
-        at_ms: lap.at_ms,
-    });
-
     let payload = json!({
         "session_id": session_id,
         "lap_number": lap.lap_number
@@ -176,6 +182,12 @@ async fn force_pit_start(State(state): State<AppState>) -> Result<impl IntoRespo
         .storage
         .insert_hotkey_event(session_id, Some(lap.at_ms), "force_pit_start", &payload)
         .map_err(ApiError::internal)?;
+
+    state.emit_lap_validity_event(LapValidityEvent::PitStopStarted {
+        session_id,
+        lap_number: lap.lap_number,
+        at_ms: lap.at_ms,
+    });
 
     Ok(Json(payload))
 }
@@ -188,13 +200,6 @@ async fn force_pit_end(State(state): State<AppState>) -> Result<impl IntoRespons
         .map(|lap| lap.at_ms)
         .unwrap_or(pit.started_at_ms);
     let duration_s = (at_ms.saturating_sub(pit.started_at_ms)) as f32 / 1_000.0;
-    state.emit_lap_validity_event(LapValidityEvent::PitStopEnded {
-        session_id: pit.session_id,
-        lap_number: pit.lap_number,
-        at_ms,
-        duration_s,
-    });
-
     let payload = json!({
         "session_id": pit.session_id,
         "lap_number": pit.lap_number,
@@ -204,6 +209,13 @@ async fn force_pit_end(State(state): State<AppState>) -> Result<impl IntoRespons
         .storage
         .insert_hotkey_event(session_id, Some(at_ms), "force_pit_end", &payload)
         .map_err(ApiError::internal)?;
+
+    state.emit_lap_validity_event(LapValidityEvent::PitStopEnded {
+        session_id: pit.session_id,
+        lap_number: pit.lap_number,
+        at_ms,
+        duration_s,
+    });
 
     Ok(Json(json!({
         "duration_s": duration_s
@@ -232,12 +244,6 @@ async fn force_session_boundary(
 
     state.clear_pit_runtime();
     let at_ms = lap.map(|ctx| ctx.at_ms).unwrap_or_default();
-    state.emit_lap_validity_event(LapValidityEvent::SessionResetDetected {
-        prior_session_id,
-        new_session_id,
-        at_ms,
-    });
-
     let payload = json!({
         "prior_session_id": prior_session_id,
         "new_session_id": new_session_id
@@ -251,6 +257,12 @@ async fn force_session_boundary(
             &payload,
         )
         .map_err(ApiError::internal)?;
+
+    state.emit_lap_validity_event(LapValidityEvent::SessionResetDetected {
+        prior_session_id,
+        new_session_id,
+        at_ms,
+    });
 
     Ok(Json(payload))
 }

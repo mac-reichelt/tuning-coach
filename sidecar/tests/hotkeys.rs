@@ -53,7 +53,10 @@ async fn sidecar_hotkey_endpoints_emit_events_and_persist_hotkey_rows() {
                 .send()
                 .await
                 .expect("mark dirty request should complete");
-            if response.status() != reqwest::StatusCode::CONFLICT {
+            if !matches!(
+                response.status(),
+                reqwest::StatusCode::CONFLICT | reqwest::StatusCode::SERVICE_UNAVAILABLE
+            ) {
                 return response;
             }
             sleep(Duration::from_millis(50)).await;

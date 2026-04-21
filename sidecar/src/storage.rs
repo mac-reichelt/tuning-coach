@@ -25,15 +25,15 @@ impl Storage {
         let db_path = data_dir.join("tuning-coach.db");
         let manager = SqliteConnectionManager::file(&db_path).with_init(|conn| {
             conn.execute_batch(
-                "PRAGMA journal_mode=WAL;
+                "PRAGMA busy_timeout=5000;
+                 PRAGMA journal_mode=WAL;
                  PRAGMA synchronous=NORMAL;
                  PRAGMA foreign_keys=ON;
-                 PRAGMA busy_timeout=5000;
                  PRAGMA temp_store=MEMORY;",
             )
         });
 
-        let pool = Pool::builder().max_size(4).build(manager)?;
+        let pool = Pool::builder().max_size(1).build(manager)?;
         let mut conn = pool.get()?;
         run_migrations(&mut conn)?;
 
