@@ -66,6 +66,10 @@ struct AppConfig {
     telemetry_hz: u16,
     rewind_backward_jump_m: f32,
     session_reset_race_time_window_s: f32,
+    pit_entry_speed_threshold_kph: f32,
+    pit_entry_dwell_s: f32,
+    pit_exit_speed_threshold_kph: f32,
+    pit_exit_dwell_s: f32,
     off_track_window_ms: u32,
     off_track_min_wheels: u8,
     surface_rumble_threshold: f32,
@@ -90,6 +94,10 @@ impl Default for AppConfig {
             telemetry_hz: DEFAULT_TELEMETRY_HZ,
             rewind_backward_jump_m: defaults.rewind_backward_jump_m,
             session_reset_race_time_window_s: defaults.session_reset_race_time_window_s,
+            pit_entry_speed_threshold_kph: defaults.pit_entry_speed_threshold_kph,
+            pit_entry_dwell_s: defaults.pit_entry_dwell_s,
+            pit_exit_speed_threshold_kph: defaults.pit_exit_speed_threshold_kph,
+            pit_exit_dwell_s: defaults.pit_exit_dwell_s,
             off_track_window_ms: defaults.off_track_window_ms,
             off_track_min_wheels: defaults.off_track_min_wheels,
             surface_rumble_threshold: defaults.surface_rumble_threshold,
@@ -144,6 +152,10 @@ impl AppConfig {
         lap_validity::LapValidityConfig {
             rewind_backward_jump_m: self.rewind_backward_jump_m,
             session_reset_race_time_window_s: self.session_reset_race_time_window_s,
+            pit_entry_speed_threshold_kph: self.pit_entry_speed_threshold_kph,
+            pit_entry_dwell_s: self.pit_entry_dwell_s,
+            pit_exit_speed_threshold_kph: self.pit_exit_speed_threshold_kph,
+            pit_exit_dwell_s: self.pit_exit_dwell_s,
             off_track_window_ms: self.off_track_window_ms,
             off_track_min_wheels: self.off_track_min_wheels,
             surface_rumble_threshold: self.surface_rumble_threshold,
@@ -180,7 +192,7 @@ struct AppState {
     recommendation_tx: broadcast::Sender<Value>,
     lap_validity_tx: broadcast::Sender<lap_validity::LapValidityEvent>,
     suppress_heuristics_tx: watch::Sender<bool>,
-    _session_state_tx: broadcast::Sender<session_state::SessionStateChanged>,
+    session_state_tx: broadcast::Sender<session_state::SessionStateChanged>,
     telemetry_hz: u16,
 }
 
@@ -311,7 +323,7 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         recommendation_tx: broadcast::channel(256).0,
         lap_validity_tx: broadcast::channel(256).0,
         suppress_heuristics_tx: watch::channel(false).0,
-        _session_state_tx: broadcast::channel(256).0,
+        session_state_tx: broadcast::channel(256).0,
         telemetry_hz: config.telemetry_hz,
     };
 
@@ -375,6 +387,10 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         lap_validity::LapValidityConfig {
             rewind_backward_jump_m: config.rewind_backward_jump_m,
             session_reset_race_time_window_s: config.session_reset_race_time_window_s,
+            pit_entry_speed_threshold_kph: config.pit_entry_speed_threshold_kph,
+            pit_entry_dwell_s: config.pit_entry_dwell_s,
+            pit_exit_speed_threshold_kph: config.pit_exit_speed_threshold_kph,
+            pit_exit_dwell_s: config.pit_exit_dwell_s,
             off_track_window_ms: config.off_track_window_ms,
             off_track_min_wheels: config.off_track_min_wheels,
             surface_rumble_threshold: config.surface_rumble_threshold,
@@ -387,7 +403,7 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
     ));
     let session_state_task = tokio::spawn(session_state::session_state_loop(
         state.latest_telemetry_tx.subscribe(),
-        state._session_state_tx.clone(),
+        state.session_state_tx.clone(),
         state.storage.clone(),
         state.shutdown_tx.subscribe(),
         session_state::SessionStateMachineConfig {
@@ -421,11 +437,25 @@ async fn lap_validity_loop(
     let mut detector = lap_validity::LapValidityDetector::new(config);
     let mut packet_rx = state.latest_telemetry_tx.subscribe();
     let mut shutdown_rx = state.shutdown_tx.subscribe();
+    let mut session_state_rx = state.session_state_tx.subscribe();
     let sidecar_version = env!("CARGO_PKG_VERSION");
 
     loop {
         tokio::select! {
             _ = shutdown_rx.recv() => break,
+            session_change = session_state_rx.recv() => {
+                match session_change {
+                    Ok(change) if change.to == session_state::SessionState::Finished => {
+                        let events = detector.finalize_at_ms(change.at_ms as u32)?;
+                        for event in events {
+                            let _ = state.lap_validity_tx.send(event);
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
             changed = packet_rx.changed() => {
                 if changed.is_err() {
                     break;
@@ -441,6 +471,10 @@ async fn lap_validity_loop(
                 }
             }
         }
+    }
+    let events = detector.finalize()?;
+    for event in events {
+        let _ = state.lap_validity_tx.send(event);
     }
 
     Ok(())
@@ -545,6 +579,8 @@ async fn ws_connection_loop(mut socket: WebSocket, state: AppState) {
                             lap_validity::LapValidityEvent::LapRewindDetected {..} => "lap_rewind_detected",
                             lap_validity::LapValidityEvent::LapDirtyDetected {..} => "lap_dirty_detected",
                             lap_validity::LapValidityEvent::SessionResetDetected {..} => "session_reset_detected",
+                            lap_validity::LapValidityEvent::PitStopStarted {..} => "pit_stop_started",
+                            lap_validity::LapValidityEvent::PitStopEnded {..} => "pit_stop_ended",
                         };
                         if let Ok(payload) = serde_json::to_value(event) {
                             if send_event(&mut socket, event_type, &payload).await.is_err() {
@@ -700,6 +736,25 @@ mod tests {
             let result = AppConfig::from_sources(None, true);
             assert!(result.is_err());
         });
+    }
+
+    #[test]
+    #[serial]
+    fn config_invalid_pit_hysteresis_fails() {
+        with_var(
+            "TUNING_COACH_PIT_ENTRY_SPEED_THRESHOLD_KPH",
+            Some("45.0"),
+            || {
+                with_var(
+                    "TUNING_COACH_PIT_EXIT_SPEED_THRESHOLD_KPH",
+                    Some("40.0"),
+                    || {
+                        let result = AppConfig::from_sources(None, true);
+                        assert!(result.is_err());
+                    },
+                );
+            },
+        );
     }
 
     #[test]

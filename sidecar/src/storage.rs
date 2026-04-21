@@ -97,6 +97,23 @@ impl Storage {
         Ok(())
     }
 
+    pub(crate) fn mark_lap_pit_stop(
+        &self,
+        session_id: i64,
+        lap_number: u16,
+    ) -> Result<(), StorageError> {
+        let _ = self.mark_lap_dirty(session_id, lap_number, "PitStop")?;
+        let conn = self.pool.get()?;
+        conn.execute(
+            "UPDATE laps
+                SET is_pit = 1
+              WHERE session_id = ?1
+                AND lap_number = ?2",
+            params![session_id, i64::from(lap_number)],
+        )?;
+        Ok(())
+    }
+
     pub(crate) fn mark_lap_dirty(
         &self,
         session_id: i64,
