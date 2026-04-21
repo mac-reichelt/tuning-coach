@@ -104,8 +104,19 @@ jobs:
             -H "Content-Type: application/json" \
             --data-binary @/tmp/agent-review-request.json > /tmp/agent-review-response.json
 
+          if ! jq -e '.choices[0].message.content' /tmp/agent-review-response.json >/dev/null 2>&1; then
+            {
+              echo "verdict=COMMENT"
+              echo "summary=Agent response was not in the expected format."
+              echo "findings<<EOF"
+              jq -c . /tmp/agent-review-response.json
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           raw_content="$(jq -r '.choices[0].message.content // ""' /tmp/agent-review-response.json)"
-          parsed_json="$(printf '%s\n' "$raw_content" | sed -E 's/^[[:space:]]*```json[[:space:]]*$//; s/^[[:space:]]*```[[:space:]]*$//')"
+          parsed_json="$(RAW_CONTENT="$raw_content" python -c 'import os; s=os.environ["RAW_CONTENT"].strip(); s="\\n".join(l for l in s.splitlines() if not l.strip().startswith("```")).strip() if s.startswith("```") else s; start=s.find("{"); end=s.rfind("}"); print(s[start:end+1] if start!=-1 and end!=-1 and end>=start else s)')"
 
           if printf '%s' "$parsed_json" | jq -e . >/dev/null 2>&1; then
             verdict="$(printf '%s' "$parsed_json" | jq -r '.verdict // "COMMENT"' | tr '[:lower:]' '[:upper:]')"
@@ -202,7 +213,7 @@ jobs:
           completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           details_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
-          existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs?check_name=agent-review" -H "Accept: application/vnd.github+json" --jq '.check_runs[0].id // empty' || true)"
+          existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs?check_name=agent-review" -H "Accept: application/vnd.github+json" --jq '.check_runs[0].id // empty')"
 
           create_payload="$(jq -n \
             --arg head_sha "${HEAD_SHA}" \
