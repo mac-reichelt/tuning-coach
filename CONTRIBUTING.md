@@ -86,7 +86,8 @@ These match what CI runs.
 6. **PR.** Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md). Link the
    issue with `Closes #N`.
 7. **CI.** All required checks must pass.
-8. **Review.** A reviewer (human or agent) will leave feedback or approve.
+8. **Review.** The `agent-review` check runs on each non-draft, non-Dependabot
+   PR update and must pass (or be neutral on skip paths) before merge.
 9. **Merge.** Squash-merge keeps history clean. release-please handles the
    version bump.
 
@@ -114,6 +115,23 @@ feat(api)!: rename /telemetry endpoint to /stream/telemetry
 …and include a `BREAKING CHANGE:` footer in the body.
 
 This is enforced by the `pr-title` workflow.
+
+## Agent review check
+
+`agent-review` is a required status check for merge gating. On PR events
+(`opened`, `synchronize`, `reopened`, `ready_for_review`), it:
+
+- reads `.github/agents/code-review.agent.md` as review conventions
+- reviews the changed files + full diff through GitHub Models
+- emits a verdict: `APPROVE`, `REQUEST_CHANGES`, or `COMMENT`
+- publishes a check run named `agent-review` with:
+  - `success` for `APPROVE`
+  - `failure` for `REQUEST_CHANGES`
+  - `neutral` for `COMMENT`
+- posts findings as a PR review comment
+
+The workflow skips expensive review runs for draft PRs, Dependabot PRs, and
+docs-only/dependabot-config-only changes.
 
 ## Code Style
 

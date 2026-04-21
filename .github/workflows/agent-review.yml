@@ -1,0 +1,252 @@
+name: agent-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+  models: read
+
+concurrency:
+  group: agent-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Collect PR context + evaluate skips
+        id: context
+        run: |
+          set -euo pipefail
+
+          SKIP_REASON=""
+          if [[ "${{ github.event.pull_request.draft }}" == "true" ]]; then
+            SKIP_REASON="draft"
+          elif [[ "${{ github.actor }}" == "dependabot[bot]" ]]; then
+            SKIP_REASON="dependabot"
+          fi
+
+          mapfile -t FILES < <(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
+
+          DOCS_ONLY=true
+          for file in "${FILES[@]}"; do
+            if [[ "$file" != docs/* && "$file" != *.md && "$file" != ".github/dependabot.yml" ]]; then
+              DOCS_ONLY=false
+              break
+            fi
+          done
+          if [[ "$DOCS_ONLY" == "true" && -z "$SKIP_REASON" ]]; then
+            SKIP_REASON="docs-only"
+          fi
+
+          {
+            echo "skip_reason=${SKIP_REASON}"
+            echo "changed_files<<EOF"
+            printf '%s\n' "${FILES[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run code-review agent (GitHub Models)
+        id: review
+        if: steps.context.outputs.skip_reason == ''
+        run: |
+          set -euo pipefail
+
+          diff_content="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H "Accept: application/vnd.github.v3.diff")"
+          prompt_content="$(cat .github/agents/code-review.agent.md)"
+          changed_files="${{ steps.context.outputs.changed_files }}"
+
+          jq -n \
+            --arg pr_number "${PR_NUMBER}" \
+            --arg base_sha "${BASE_SHA}" \
+            --arg head_sha "${HEAD_SHA}" \
+            --arg changed_files "${changed_files}" \
+            --arg diff_content "${diff_content}" \
+            --arg prompt_content "${prompt_content}" \
+            '{
+              model: "gpt-4.1",
+              temperature: 0.1,
+              messages: [
+                {
+                  role: "system",
+                  content: "You are the tuning-coach code-review agent reviewer. You MUST apply the full conventions and checklist provided in the attached .github/agents/code-review.agent.md content. Return strict JSON: {\"verdict\":\"APPROVE|REQUEST_CHANGES|COMMENT\",\"summary\":\"string\",\"findings_markdown\":\"string\"}. Use REQUEST_CHANGES only for real blocking issues. Use COMMENT for non-blocking notes or when no blockers exist."
+                },
+                {
+                  role: "user",
+                  content: (
+                    "Review this PR.\n\n" +
+                    "PR: #" + $pr_number + "\n" +
+                    "Base SHA: " + $base_sha + "\n" +
+                    "Head SHA: " + $head_sha + "\n\n" +
+                    "Changed files:\n" + $changed_files + "\n\n" +
+                    "Full diff:\n" + $diff_content + "\n\n" +
+                    "Project review conventions (.github/agents/code-review.agent.md):\n" + $prompt_content
+                  )
+                }
+              ]
+            }' > /tmp/agent-review-request.json
+
+          curl -fsSL "https://models.inference.ai.azure.com/chat/completions" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-binary @/tmp/agent-review-request.json > /tmp/agent-review-response.json
+
+          raw_content="$(jq -r '.choices[0].message.content // ""' /tmp/agent-review-response.json)"
+          parsed_json="$(printf '%s' "$raw_content" | sed -e 's/^```json//' -e 's/^```//' -e 's/```$//')"
+
+          if printf '%s' "$parsed_json" | jq -e . >/dev/null 2>&1; then
+            verdict="$(printf '%s' "$parsed_json" | jq -r '.verdict // "COMMENT"' | tr '[:lower:]' '[:upper:]')"
+            summary="$(printf '%s' "$parsed_json" | jq -r '.summary // "Agent review completed."')"
+            findings="$(printf '%s' "$parsed_json" | jq -r '.findings_markdown // "No issues found."')"
+          else
+            verdict="COMMENT"
+            summary="Agent response could not be parsed; posted as comment."
+            findings="$raw_content"
+          fi
+
+          case "$verdict" in
+            APPROVE|REQUEST_CHANGES|COMMENT) ;;
+            *) verdict="COMMENT" ;;
+          esac
+
+          {
+            echo "verdict=${verdict}"
+            echo "summary<<EOF"
+            printf '%s\n' "$summary"
+            echo "EOF"
+            echo "findings<<EOF"
+            printf '%s\n' "$findings"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set skip verdict
+        id: skipped
+        if: steps.context.outputs.skip_reason != ''
+        run: |
+          set -euo pipefail
+          reason="${{ steps.context.outputs.skip_reason }}"
+
+          {
+            echo "verdict=COMMENT"
+            echo "summary=Agent review skipped (${reason})."
+            echo "findings<<EOF"
+            echo "Agent review skipped for this PR (${reason})."
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish PR review comment
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ steps.context.outputs.skip_reason }}" == "" ]]; then
+            verdict="${{ steps.review.outputs.verdict }}"
+            summary="${{ steps.review.outputs.summary }}"
+            findings="${{ steps.review.outputs.findings }}"
+          else
+            verdict="${{ steps.skipped.outputs.verdict }}"
+            summary="${{ steps.skipped.outputs.summary }}"
+            findings="${{ steps.skipped.outputs.findings }}"
+          fi
+
+          body=$(cat <<'EOF'
+          🤖 **agent-review verdict:** __VERDICT__
+
+          __SUMMARY__
+
+          __FINDINGS__
+          EOF
+          )
+
+          body="${body/__VERDICT__/${verdict}}"
+          body="${body/__SUMMARY__/${summary}}"
+          body="${body/__FINDINGS__/${findings}}"
+
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
+            -f event='COMMENT' \
+            -f body="$body" >/dev/null
+
+      - name: Publish agent-review check run
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ steps.context.outputs.skip_reason }}" == "" ]]; then
+            verdict="${{ steps.review.outputs.verdict }}"
+            summary="${{ steps.review.outputs.summary }}"
+            findings="${{ steps.review.outputs.findings }}"
+          else
+            verdict="${{ steps.skipped.outputs.verdict }}"
+            summary="${{ steps.skipped.outputs.summary }}"
+            findings="${{ steps.skipped.outputs.findings }}"
+          fi
+
+          conclusion="neutral"
+          if [[ "$verdict" == "APPROVE" ]]; then
+            conclusion="success"
+          elif [[ "$verdict" == "REQUEST_CHANGES" ]]; then
+            conclusion="failure"
+          fi
+
+          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          details_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs" -H "Accept: application/vnd.github+json" --jq '.check_runs[] | select(.name == "agent-review" and .app.slug == "github-actions") | .id' | head -n1 || true)"
+
+          create_payload="$(jq -n \
+            --arg head_sha "${HEAD_SHA}" \
+            --arg completed_at "${completed_at}" \
+            --arg conclusion "${conclusion}" \
+            --arg details_url "${details_url}" \
+            --arg title "${summary}" \
+            --arg text "${findings}" \
+            '{
+              name: "agent-review",
+              head_sha: $head_sha,
+              status: "completed",
+              conclusion: $conclusion,
+              completed_at: $completed_at,
+              details_url: $details_url,
+              output: {
+                title: $title,
+                summary: $title,
+                text: $text
+              }
+            }')"
+
+          update_payload="$(jq -n \
+            --arg completed_at "${completed_at}" \
+            --arg conclusion "${conclusion}" \
+            --arg details_url "${details_url}" \
+            --arg title "${summary}" \
+            --arg text "${findings}" \
+            '{
+              status: "completed",
+              conclusion: $conclusion,
+              completed_at: $completed_at,
+              details_url: $details_url,
+              output: {
+                title: $title,
+                summary: $title,
+                text: $text
+              }
+            }')"
+
+          if [[ -n "$existing_id" ]]; then
+            gh api "repos/${GITHUB_REPOSITORY}/check-runs/${existing_id}" \
+              -X PATCH \
+              --input - <<<"$update_payload" >/dev/null
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/check-runs" \
+              -X POST \
+              --input - <<<"$create_payload" >/dev/null
+          fi
