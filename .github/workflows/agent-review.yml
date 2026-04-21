@@ -8,13 +8,15 @@ permissions:
   contents: read
   checks: write
   pull-requests: write
+  models: read
 
 concurrency:
   group: agent-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  review:
+  agent-review:
+    name: agent-review verdict
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
