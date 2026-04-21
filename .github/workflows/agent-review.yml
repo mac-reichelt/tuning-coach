@@ -39,6 +39,9 @@ jobs:
           mapfile -t FILES < <(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
 
           DOCS_ONLY=true
+          if [[ "${#FILES[@]}" -eq 0 ]]; then
+            DOCS_ONLY=false
+          fi
           for file in "${FILES[@]}"; do
             if [[ "$file" != docs/* && "$file" != *.md && "$file" != ".github/dependabot.yml" ]]; then
               DOCS_ONLY=false
@@ -102,7 +105,7 @@ jobs:
             --data-binary @/tmp/agent-review-request.json > /tmp/agent-review-response.json
 
           raw_content="$(jq -r '.choices[0].message.content // ""' /tmp/agent-review-response.json)"
-          parsed_json="$(printf '%s\n' "$raw_content" | sed '/^```json$/d; /^```$/d')"
+          parsed_json="$(printf '%s\n' "$raw_content" | sed -E 's/^[[:space:]]*```json[[:space:]]*$//; s/^[[:space:]]*```[[:space:]]*$//')"
 
           if printf '%s' "$parsed_json" | jq -e . >/dev/null 2>&1; then
             verdict="$(printf '%s' "$parsed_json" | jq -r '.verdict // "COMMENT"' | tr '[:lower:]' '[:upper:]')"
@@ -199,7 +202,7 @@ jobs:
           completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           details_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
-          existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs?check_name=agent-review" -H "Accept: application/vnd.github+json" --jq '.check_runs[] | select(.name == "agent-review" and .app.slug == "github-actions") | .id' | head -n1 || true)"
+          existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs?check_name=agent-review" -H "Accept: application/vnd.github+json" --jq '.check_runs[0].id // empty' || true)"
 
           create_payload="$(jq -n \
             --arg head_sha "${HEAD_SHA}" \
