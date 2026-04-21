@@ -119,7 +119,7 @@ async fn mark_lap_clean(State(state): State<AppState>) -> Result<impl IntoRespon
             _ => ApiError::internal(err),
         })?;
     if let Some(reason) = &overridden_reason {
-        if reason != "ManualOverride" {
+        if reason != DirtyReasonCode::ManualOverride.as_str() {
             warn!(
                 module = module_path!(),
                 %reason,

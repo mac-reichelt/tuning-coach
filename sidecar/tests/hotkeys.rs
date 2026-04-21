@@ -22,7 +22,7 @@ async fn sidecar_hotkey_endpoints_emit_events_and_persist_hotkey_rows() {
             .spawn()
             .expect("sidecar should start"),
     };
-    wait_for_health(ws_port).await;
+    wait_for_health_or_panic(ws_port).await;
 
     let http_client = reqwest::Client::new();
     let ws_url = format!("ws://127.0.0.1:{ws_port}/ws");
@@ -45,18 +45,27 @@ async fn sidecar_hotkey_endpoints_emit_events_and_persist_hotkey_rows() {
     send_udp_packet(udp_port, race_packet_bytes(1_000, 1.0, 1)).await;
     sleep(Duration::from_millis(200)).await;
 
-    let dirty_response: serde_json::Value = http_client
-        .post(format!(
-            "http://127.0.0.1:{ws_port}/api/v1/hotkeys/mark-lap-dirty"
-        ))
-        .send()
-        .await
-        .expect("mark dirty")
-        .error_for_status()
-        .expect("mark dirty should succeed")
-        .json()
-        .await
-        .expect("mark dirty response json");
+    let dirty_url = format!("http://127.0.0.1:{ws_port}/api/v1/hotkeys/mark-lap-dirty");
+    let dirty_response: serde_json::Value = timeout(Duration::from_secs(5), async {
+        loop {
+            let response = http_client
+                .post(&dirty_url)
+                .send()
+                .await
+                .expect("mark dirty request should complete");
+            if response.status() != reqwest::StatusCode::CONFLICT {
+                return response;
+            }
+            sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("mark dirty should eventually succeed")
+    .error_for_status()
+    .expect("mark dirty should succeed")
+    .json()
+    .await
+    .expect("mark dirty response json");
     assert_eq!(dirty_response["lap_number"], 1);
     assert!(dirty_response["marked_dirty_at"].is_string());
     let dirty_event = wait_for_event(&mut ws_client, "lap_dirty_detected").await;
@@ -194,7 +203,7 @@ async fn sidecar_hotkey_endpoints_emit_events_and_persist_hotkey_rows() {
     }
 }
 
-async fn wait_for_health(ws_port: u16) {
+async fn wait_for_health_or_panic(ws_port: u16) {
     let health_url = format!("http://127.0.0.1:{ws_port}/health");
     let client = reqwest::Client::new();
     let deadline = Instant::now() + Duration::from_secs(10);

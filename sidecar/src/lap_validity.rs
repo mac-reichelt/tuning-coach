@@ -178,6 +178,18 @@ impl DirtyReason {
     }
 }
 
+impl DirtyReasonCode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OffTrack => "OffTrack",
+            Self::WallContact => "WallContact",
+            Self::CornerCut => "CornerCut",
+            Self::Rewind => "Rewind",
+            Self::ManualOverride => "ManualOverride",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(tag = "event", rename_all = "snake_case")]
 #[allow(clippy::enum_variant_names)]
