@@ -92,7 +92,11 @@ Full setup: [docs/getting-started.md](docs/getting-started.md).
 - [Plan + Roadmap](docs/PLAN.md) — phased delivery
 - [Architecture Decisions](docs/adr/) — ADRs
 - [API Reference](docs/reference/api.md) — sidecar HTTP/WS API (TBD)
-- [Telemetry Schema](docs/reference/telemetry-schema.md) — Forza Dash packet (TBD)
+- Telemetry Schema — Forza Dash packet (TBD)
+
+## Heuristics Reference
+
+- [Lap Validity Heuristics + Thresholds](docs/reference/lap-validity.md)
 
 ## Status
 
