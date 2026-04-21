@@ -88,7 +88,7 @@ See `docs/adr/` for architecture decisions.
 5. **Test locally**: `cargo test` + `npm test` as relevant.
 6. **Commit** with conventional commit format.
 7. **Open PR** using the template; link the issue (`Closes #N`).
-8. CI must pass: `ci`, `codeql`, `dependency-review`, `pr-title`.
+8. CI must pass: `ci`, `codeql`, `dependency-review`, `pr-title`, `agent-review`.
 9. Merge via squash; release-please handles the rest.
 
 ## Key Files
