@@ -135,6 +135,8 @@ pub enum DirtyReasonCode {
     CornerCut,
     #[serde(rename = "Rewind")]
     Rewind,
+    #[serde(rename = "ManualOverride")]
+    ManualOverride,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, Hash)]
@@ -171,6 +173,19 @@ impl DirtyReason {
             DirtyReasonCode::WallContact => "WallContact",
             DirtyReasonCode::CornerCut => "CornerCut",
             DirtyReasonCode::Rewind => "Rewind",
+            DirtyReasonCode::ManualOverride => "ManualOverride",
+        }
+    }
+}
+
+impl DirtyReasonCode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OffTrack => "OffTrack",
+            Self::WallContact => "WallContact",
+            Self::CornerCut => "CornerCut",
+            Self::Rewind => "Rewind",
+            Self::ManualOverride => "ManualOverride",
         }
     }
 }
@@ -190,6 +205,11 @@ pub enum LapValidityEvent {
         reason: DirtyReason,
         at_ms: u32,
         lap_number: u16,
+    },
+    LapCleanMarked {
+        session_id: i64,
+        lap_number: u16,
+        at_ms: u32,
     },
     SessionResetDetected {
         prior_session_id: i64,

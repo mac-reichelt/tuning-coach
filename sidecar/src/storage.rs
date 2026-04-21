@@ -25,15 +25,15 @@ impl Storage {
         let db_path = data_dir.join("tuning-coach.db");
         let manager = SqliteConnectionManager::file(&db_path).with_init(|conn| {
             conn.execute_batch(
-                "PRAGMA journal_mode=WAL;
+                "PRAGMA busy_timeout=5000;
+                 PRAGMA journal_mode=WAL;
                  PRAGMA synchronous=NORMAL;
                  PRAGMA foreign_keys=ON;
-                 PRAGMA busy_timeout=5000;
                  PRAGMA temp_store=MEMORY;",
             )
         });
 
-        let pool = Pool::builder().max_size(4).build(manager)?;
+        let pool = Pool::builder().max_size(1).build(manager)?;
         let mut conn = pool.get()?;
         run_migrations(&mut conn)?;
 
@@ -78,6 +78,24 @@ impl Storage {
             params![session_id, i64::from(lap_number), i64::from(started_t_ms)],
         )?;
         Ok(())
+    }
+
+    pub(crate) fn active_session_id(&self) -> Result<Option<i64>, StorageError> {
+        let conn = self.pool.get()?;
+        conn.query_row(
+            "SELECT id
+               FROM sessions
+              WHERE ended_at IS NULL
+              ORDER BY id DESC
+              LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .map(Some)
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(StorageError::Sqlite(other)),
+        })
     }
 
     pub(crate) fn mark_lap_rewind(
@@ -164,6 +182,95 @@ impl Storage {
             ],
         )?;
         Ok(lap_id)
+    }
+
+    pub(crate) fn mark_lap_dirty_manual_override(
+        &self,
+        session_id: i64,
+        lap_number: u16,
+    ) -> Result<i64, StorageError> {
+        let conn = self.pool.get()?;
+        let (lap_id, dirty_reasons) = conn.query_row(
+            "SELECT id, dirty_reasons
+               FROM laps
+              WHERE session_id = ?1
+                AND lap_number = ?2",
+            params![session_id, i64::from(lap_number)],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)),
+        )?;
+
+        let mut reasons = match dirty_reasons {
+            Some(serialized) => parse_dirty_reasons_json(&serialized),
+            None => Vec::new(),
+        };
+        if !reasons.iter().any(|existing| existing == "ManualOverride") {
+            reasons.push("ManualOverride".to_string());
+        }
+
+        conn.execute(
+            "UPDATE laps
+                SET valid = 0,
+                    dirty_reason = 'ManualOverride',
+                    dirty_reasons = ?3
+              WHERE session_id = ?1
+                AND lap_number = ?2",
+            params![
+                session_id,
+                i64::from(lap_number),
+                serde_json::to_string(&reasons)?
+            ],
+        )?;
+        Ok(lap_id)
+    }
+
+    pub(crate) fn mark_lap_clean(
+        &self,
+        session_id: i64,
+        lap_number: u16,
+    ) -> Result<Option<String>, StorageError> {
+        let conn = self.pool.get()?;
+        let previous_reason = conn.query_row(
+            "SELECT dirty_reason
+               FROM laps
+              WHERE session_id = ?1
+                AND lap_number = ?2",
+            params![session_id, i64::from(lap_number)],
+            |row| row.get::<_, Option<String>>(0),
+        )?;
+
+        conn.execute(
+            "UPDATE laps
+                SET valid = 1,
+                    dirty_reason = NULL,
+                    dirty_reasons = NULL
+              WHERE session_id = ?1
+                AND lap_number = ?2",
+            params![session_id, i64::from(lap_number)],
+        )?;
+        Ok(previous_reason)
+    }
+
+    pub(crate) fn insert_hotkey_event(
+        &self,
+        session_id: i64,
+        t_ms: Option<u32>,
+        action: &str,
+        payload_json: &Value,
+    ) -> Result<String, StorageError> {
+        let conn = self.pool.get()?;
+        conn.query_row(
+            "INSERT INTO hotkey_events (session_id, received_at, t_ms, action, payload_json)
+             VALUES (?1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?2, ?3, ?4)
+             RETURNING received_at",
+            params![
+                session_id,
+                t_ms.map(i64::from),
+                action,
+                payload_json.to_string()
+            ],
+            |row| row.get(0),
+        )
+        .map_err(StorageError::from)
     }
 
     #[cfg(test)]

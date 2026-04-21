@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::{Duration, Instant},
 };
@@ -37,6 +37,7 @@ use tower_http::{
 use tracing::{error, info, info_span};
 use tracing_subscriber::EnvFilter;
 
+mod hotkeys;
 mod lap_validity;
 mod session_state;
 mod storage;
@@ -181,9 +182,23 @@ impl AppConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PitStopRuntime {
+    pub(crate) session_id: i64,
+    pub(crate) lap_number: u16,
+    pub(crate) started_at_ms: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LapContext {
+    pub(crate) lap_number: u16,
+    pub(crate) at_ms: u32,
+    pub(crate) car_ordinal: i32,
+}
+
 #[derive(Clone)]
-struct AppState {
-    storage: storage::Storage,
+pub(crate) struct AppState {
+    pub(crate) storage: storage::Storage,
     active_ws_connections: Arc<AtomicUsize>,
     ws_connections_tx: watch::Sender<usize>,
     latest_telemetry_tx: watch::Sender<Option<telemetry::TelemetryPacket>>,
@@ -191,6 +206,7 @@ struct AppState {
     telemetry_tx: watch::Sender<Value>,
     recommendation_tx: broadcast::Sender<Value>,
     lap_validity_tx: broadcast::Sender<lap_validity::LapValidityEvent>,
+    pit_runtime: Arc<Mutex<Option<PitStopRuntime>>>,
     suppress_heuristics_tx: watch::Sender<bool>,
     session_state_tx: broadcast::Sender<session_state::SessionStateChanged>,
     telemetry_hz: u16,
@@ -206,6 +222,50 @@ impl AppState {
             return;
         }
         let _ = self.recommendation_tx.send(payload);
+    }
+
+    pub(crate) fn current_lap_context(&self) -> Option<LapContext> {
+        match self.latest_telemetry_tx.borrow().clone() {
+            Some(telemetry::TelemetryPacket::Dash(packet)) => Some(LapContext {
+                lap_number: packet.lap_number,
+                at_ms: packet.sled.timestamp_ms,
+                car_ordinal: packet.sled.car_ordinal,
+            }),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn pit_runtime(&self) -> Option<PitStopRuntime> {
+        *self.pit_runtime.lock().expect("pit runtime lock")
+    }
+
+    pub(crate) fn clear_pit_runtime(&self) {
+        *self.pit_runtime.lock().expect("pit runtime lock") = None;
+    }
+
+    pub(crate) fn emit_lap_validity_event(&self, event: lap_validity::LapValidityEvent) {
+        {
+            let mut pit_runtime = self.pit_runtime.lock().expect("pit runtime lock");
+            match &event {
+                lap_validity::LapValidityEvent::PitStopStarted {
+                    session_id,
+                    lap_number,
+                    at_ms,
+                } => {
+                    *pit_runtime = Some(PitStopRuntime {
+                        session_id: *session_id,
+                        lap_number: *lap_number,
+                        started_at_ms: *at_ms,
+                    });
+                }
+                lap_validity::LapValidityEvent::PitStopEnded { .. }
+                | lap_validity::LapValidityEvent::SessionResetDetected { .. } => {
+                    *pit_runtime = None;
+                }
+                _ => {}
+            }
+        }
+        let _ = self.lap_validity_tx.send(event);
     }
 }
 
@@ -322,6 +382,7 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         telemetry_tx: watch::channel(Value::Null).0,
         recommendation_tx: broadcast::channel(256).0,
         lap_validity_tx: broadcast::channel(256).0,
+        pit_runtime: Arc::new(Mutex::new(None)),
         suppress_heuristics_tx: watch::channel(false).0,
         session_state_tx: broadcast::channel(256).0,
         telemetry_hz: config.telemetry_hz,
@@ -332,6 +393,7 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         .route("/ws", get(ws_handler))
         .route("/test/telemetry", post(test_emit_telemetry))
         .route("/test/recommendation", post(test_emit_recommendation))
+        .nest("/api/v1/hotkeys", hotkeys::router())
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http().make_span_with(
             move |request: &axum::http::Request<_>| {
@@ -448,7 +510,7 @@ async fn lap_validity_loop(
                     Ok(change) if change.to == session_state::SessionState::Finished => {
                         let events = detector.finalize_at_ms(change.at_ms as u32)?;
                         for event in events {
-                            let _ = state.lap_validity_tx.send(event);
+                            state.emit_lap_validity_event(event);
                         }
                     }
                     Ok(_) => {}
@@ -467,14 +529,14 @@ async fn lap_validity_loop(
                 let events = detector.process_packet(&dash_packet, &state.storage, sidecar_version)?;
                 let _ = state.suppress_heuristics_tx.send(detector.suppress_current_lap_analysis());
                 for event in events {
-                    let _ = state.lap_validity_tx.send(event);
+                    state.emit_lap_validity_event(event);
                 }
             }
         }
     }
     let events = detector.finalize()?;
     for event in events {
-        let _ = state.lap_validity_tx.send(event);
+        state.emit_lap_validity_event(event);
     }
 
     Ok(())
@@ -578,6 +640,7 @@ async fn ws_connection_loop(mut socket: WebSocket, state: AppState) {
                         let event_type = match event {
                             lap_validity::LapValidityEvent::LapRewindDetected {..} => "lap_rewind_detected",
                             lap_validity::LapValidityEvent::LapDirtyDetected {..} => "lap_dirty_detected",
+                            lap_validity::LapValidityEvent::LapCleanMarked {..} => "lap_clean_marked",
                             lap_validity::LapValidityEvent::SessionResetDetected {..} => "session_reset_detected",
                             lap_validity::LapValidityEvent::PitStopStarted {..} => "pit_stop_started",
                             lap_validity::LapValidityEvent::PitStopEnded {..} => "pit_stop_ended",
