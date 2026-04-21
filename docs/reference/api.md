@@ -1,10 +1,10 @@
-# Sidecar WebSocket API
+# Sidecar API
 
 > **Status:** v1 contract proposed in [ADR-0002](../adr/0002-ws-api-contract.md).
 > This page is a user-facing summary of the same contract; the ADR is the
 > source of truth.
 
-The sidecar exposes a single WebSocket endpoint that any client can use to
+The sidecar exposes a WebSocket endpoint that any client can use to
 receive live telemetry and tuning recommendations. The primary consumer is
 the SimHub HTML overlay; Stream Deck plugins, custom dashboards, and future
 native viewers can attach to the same endpoint.
@@ -323,6 +323,60 @@ The server binds to `127.0.0.1` by default and has no authentication.
 Binding to `0.0.0.0` is opt-in via config and emits a warning log on every
 accepted upgrade. Do not expose the sidecar to a non-trusted network until a
 future ADR introduces auth.
+
+## REST hotkey endpoints
+
+SimHub global hotkeys send bare `POST` requests with no request body. The
+sidecar exposes these manual override endpoints under `/api/v1/hotkeys`:
+
+### `POST /api/v1/hotkeys/mark-lap-dirty`
+
+- Success: `200`
+  ```json
+  { "lap_number": 12, "marked_dirty_at": "2026-04-21T03:16:54.523Z" }
+  ```
+- Errors:
+  - `409 { "error": "no lap in progress" }`
+  - `503 { "error": "no active session" }`
+
+### `POST /api/v1/hotkeys/mark-lap-clean`
+
+- Success: `200`
+  ```json
+  { "lap_number": 12 }
+  ```
+- Errors:
+  - `409 { "error": "no lap in progress" }`
+  - `503 { "error": "no active session" }`
+
+### `POST /api/v1/hotkeys/force-pit-start`
+
+- Success: `200`
+  ```json
+  { "session_id": 5, "lap_number": 12 }
+  ```
+- Errors:
+  - `409 { "error": "already in pit stop" }`
+  - `503 { "error": "no active session" }`
+
+### `POST /api/v1/hotkeys/force-pit-end`
+
+- Success: `200`
+  ```json
+  { "duration_s": 3.2 }
+  ```
+- Errors:
+  - `409 { "error": "not currently in pit stop" }`
+  - `503 { "error": "no active session" }`
+
+### `POST /api/v1/hotkeys/force-session-boundary`
+
+- Success: `200`
+  ```json
+  { "prior_session_id": 5, "new_session_id": 6 }
+  ```
+- Errors:
+  - `503 { "error": "no active session" }`
 
 ## Test hooks (development/integration tests)
 
