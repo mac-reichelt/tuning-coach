@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Vendored docs contain intentional fake-looking secrets in code examples"
+paths = [
+    '''\.github/instructions/.*\.md''',
+]
