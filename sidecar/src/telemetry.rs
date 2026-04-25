@@ -12,6 +12,16 @@ use tracing::{debug, info, warn};
 
 pub const SLED_PACKET_LEN: usize = 232;
 pub const DASH_PACKET_LEN: usize = 311;
+pub const FM2023_DASH_PACKET_LEN: usize = 331;
+
+/// Receive buffer sized well above any known Forza datagram.
+///
+/// On Windows, `recv_from` returns `WSAEMSGSIZE` (os error 10040) if the
+/// incoming datagram exceeds the supplied buffer; it does **not** silently
+/// truncate as Linux does.  Using a buffer larger than any plausible Forza
+/// packet avoids that error and remains forward-compatible if a future game
+/// revision adds more fields.
+const UDP_RECV_BUFFER_LEN: usize = 2048;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TelemetryPacket {
@@ -120,6 +130,18 @@ pub struct DashPacket {
     pub steer: i8,
     pub normalized_driving_line: i8,
     pub normalized_ai_brake_difference: i8,
+    /// Tire wear fraction `[0.0, 1.0]`.  Present only in FM 2023 331-byte
+    /// Dash packets; `None` for legacy 311-byte packets.
+    pub tire_wear_front_left: Option<f32>,
+    /// See [`DashPacket::tire_wear_front_left`].
+    pub tire_wear_front_right: Option<f32>,
+    /// See [`DashPacket::tire_wear_front_left`].
+    pub tire_wear_rear_left: Option<f32>,
+    /// See [`DashPacket::tire_wear_front_left`].
+    pub tire_wear_rear_right: Option<f32>,
+    /// Track identifier.  Present only in FM 2023 331-byte Dash packets;
+    /// `None` for legacy 311-byte packets.
+    pub track_ordinal: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -235,6 +257,22 @@ struct RawDashPacket {
     normalized_ai_brake_difference: i8,
 }
 
+/// FM 2023 Dash packet — FM7 layout (`RawDashPacket`) followed by a 20-byte
+/// trailer: four `f32` tire-wear fractions and one `i32` track ordinal.
+///
+/// Layout verified against a Wireshark capture of `127.0.0.1:5300` traffic
+/// from Forza Motorsport (2023); see `sidecar/tests/fixtures/lap_validity/README.md`.
+#[repr(C, packed)]
+#[derive(Clone, Copy, Zeroable, Pod)]
+struct RawFm2023DashPacket {
+    dash: RawDashPacket,
+    tire_wear_front_left: f32,
+    tire_wear_front_right: f32,
+    tire_wear_rear_left: f32,
+    tire_wear_rear_right: f32,
+    track_ordinal: i32,
+}
+
 pub fn parse_telemetry_packet(bytes: &[u8]) -> Result<TelemetryPacket, ParseTelemetryError> {
     match bytes.len() {
         SLED_PACKET_LEN => {
@@ -252,6 +290,14 @@ pub fn parse_telemetry_packet(bytes: &[u8]) -> Result<TelemetryPacket, ParseTele
             validate_finite(packet.speed, "speed")?;
             Ok(TelemetryPacket::Dash(packet))
         }
+        FM2023_DASH_PACKET_LEN => {
+            let raw = bytemuck::try_from_bytes::<RawFm2023DashPacket>(bytes)
+                .map_err(|_| ParseTelemetryError::InvalidLength(bytes.len()))?;
+            let packet = DashPacket::from_fm2023_raw(raw);
+            validate_sled_packet(&packet.sled)?;
+            validate_finite(packet.speed, "speed")?;
+            Ok(TelemetryPacket::Dash(packet))
+        }
         _ => Err(ParseTelemetryError::InvalidLength(bytes.len())),
     }
 }
@@ -261,7 +307,7 @@ pub async fn udp_listener_loop(
     latest_packet_tx: watch::Sender<Option<TelemetryPacket>>,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) -> anyhow::Result<()> {
-    let mut packet_buffer = [0u8; DASH_PACKET_LEN];
+    let mut packet_buffer = [0u8; UDP_RECV_BUFFER_LEN];
     let mut packet_stats = PacketStats::new();
     let mut packet_rate_tick = tokio::time::interval(Duration::from_secs(60));
     packet_rate_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -292,7 +338,7 @@ pub async fn udp_listener_loop(
 
 fn drain_socket(
     socket: &UdpSocket,
-    packet_buffer: &mut [u8; DASH_PACKET_LEN],
+    packet_buffer: &mut [u8; UDP_RECV_BUFFER_LEN],
     latest_packet_tx: &watch::Sender<Option<TelemetryPacket>>,
     packet_stats: &mut PacketStats,
 ) -> usize {
@@ -566,7 +612,25 @@ impl DashPacket {
                 ptr,
                 normalized_ai_brake_difference
             ),
+            // Legacy 311-byte packet: FM 2023 trailer fields not present.
+            tire_wear_front_left: None,
+            tire_wear_front_right: None,
+            tire_wear_rear_left: None,
+            tire_wear_rear_right: None,
+            track_ordinal: None,
         }
+    }
+
+    fn from_fm2023_raw(raw: &RawFm2023DashPacket) -> Self {
+        let ptr = raw as *const RawFm2023DashPacket;
+        let raw_dash = read_unaligned_field!(ptr, dash);
+        let mut packet = Self::from_raw(&raw_dash);
+        packet.tire_wear_front_left = Some(read_unaligned_field!(ptr, tire_wear_front_left));
+        packet.tire_wear_front_right = Some(read_unaligned_field!(ptr, tire_wear_front_right));
+        packet.tire_wear_rear_left = Some(read_unaligned_field!(ptr, tire_wear_rear_left));
+        packet.tire_wear_rear_right = Some(read_unaligned_field!(ptr, tire_wear_rear_right));
+        packet.track_ordinal = Some(read_unaligned_field!(ptr, track_ordinal));
+        packet
     }
 }
 
@@ -599,6 +663,10 @@ mod tests {
     fn raw_packet_layout_sizes_match_forza_spec() {
         assert_eq!(std::mem::size_of::<RawSledPacket>(), SLED_PACKET_LEN);
         assert_eq!(std::mem::size_of::<RawDashPacket>(), DASH_PACKET_LEN);
+        assert_eq!(
+            std::mem::size_of::<RawFm2023DashPacket>(),
+            FM2023_DASH_PACKET_LEN
+        );
     }
 
     #[test]
@@ -659,6 +727,41 @@ mod tests {
         assert_eq!(packet.race_position, 3);
         assert_eq!(packet.gear, 4);
         assert_eq!(packet.steer, -12);
+        // Legacy 311-byte packets have no FM 2023 trailer.
+        assert_eq!(packet.tire_wear_front_left, None);
+        assert_eq!(packet.track_ordinal, None);
+    }
+
+    #[test]
+    fn parse_fm2023_dash_packet_returns_tire_wear_and_track_ordinal() {
+        let mut raw = RawFm2023DashPacket::zeroed();
+        raw.dash.sled.is_race_on = 1;
+        raw.dash.sled.engine_max_rpm = 9000.0;
+        raw.dash.sled.engine_idle_rpm = 1000.0;
+        raw.dash.sled.current_engine_rpm = 5000.0;
+        raw.dash.speed = 33.0;
+        raw.dash.lap_number = 2;
+        raw.tire_wear_front_left = 0.92;
+        raw.tire_wear_front_right = 0.91;
+        raw.tire_wear_rear_left = 0.87;
+        raw.tire_wear_rear_right = 0.89;
+        raw.track_ordinal = 861;
+
+        let bytes = bytemuck::bytes_of(&raw);
+        assert_eq!(bytes.len(), FM2023_DASH_PACKET_LEN);
+
+        let parsed = parse_telemetry_packet(bytes).expect("fm2023 dash packet should parse");
+        let TelemetryPacket::Dash(packet) = parsed else {
+            panic!("expected dash packet")
+        };
+
+        assert_eq!(packet.speed, 33.0);
+        assert_eq!(packet.lap_number, 2);
+        assert_eq!(packet.tire_wear_front_left, Some(0.92));
+        assert_eq!(packet.tire_wear_front_right, Some(0.91));
+        assert_eq!(packet.tire_wear_rear_left, Some(0.87));
+        assert_eq!(packet.tire_wear_rear_right, Some(0.89));
+        assert_eq!(packet.track_ordinal, Some(861));
     }
 
     #[test]
