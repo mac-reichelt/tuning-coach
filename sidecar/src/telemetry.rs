@@ -296,6 +296,19 @@ pub fn parse_telemetry_packet(bytes: &[u8]) -> Result<TelemetryPacket, ParseTele
             let packet = DashPacket::from_fm2023_raw(raw);
             validate_sled_packet(&packet.sled)?;
             validate_finite(packet.speed, "speed")?;
+            // Validate the FM 2023 trailer fields.
+            if let Some(v) = packet.tire_wear_front_left {
+                validate_finite(v, "tire_wear_front_left")?;
+            }
+            if let Some(v) = packet.tire_wear_front_right {
+                validate_finite(v, "tire_wear_front_right")?;
+            }
+            if let Some(v) = packet.tire_wear_rear_left {
+                validate_finite(v, "tire_wear_rear_left")?;
+            }
+            if let Some(v) = packet.tire_wear_rear_right {
+                validate_finite(v, "tire_wear_rear_right")?;
+            }
             Ok(TelemetryPacket::Dash(packet))
         }
         _ => Err(ParseTelemetryError::InvalidLength(bytes.len())),

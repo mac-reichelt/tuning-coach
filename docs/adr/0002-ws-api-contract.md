@@ -263,10 +263,18 @@ a **331-byte FM 2023 Dash packet** (the game's primary format). They are `null`
 (JSON null) for legacy 311-byte Dash packets. Clients must treat these fields as
 optional (forward-compatible per the additive-change rule above).
 
-- `tire_wear_frac` — fractional tire wear `[0.0, 1.0]` per corner (FL/FR/RL/RR).
-  Values come directly from the FM 2023 trailer; 1.0 = new, 0.0 = fully worn.
+- `tire_wear_frac` — fractional tire wear per corner (FL/FR/RL/RR). Values
+  come directly from the FM 2023 UDP trailer bytes at offsets 311–326 and are
+  forwarded as-is. Based on observed captures (see
+  `sidecar/tests/fixtures/lap_validity/README.md`), the scale appears to be
+  approximately `1.0 = new tire, 0.0 = fully worn`, matching Turn 10's
+  published Data Out documentation. Treat this as **best-effort** until
+  confirmed against fresh-tire / worn-tire captures. The sidecar validates
+  that all four values are finite (rejects `NaN`/`Inf`); no range clamping is
+  applied.
 - `track_ordinal` — integer track identifier as assigned by the game.
-  `TrackOrdinal = 861` is Brands Hatch Indy, for example.
+  `TrackOrdinal = 861` is Brands Hatch Indy per the training capture
+  (`sidecar/tests/fixtures/lap_validity/README.md`).
 
 Rationale for the field selection: every field is needed by either the
 heuristics engine (per `.github/agents/race-engineer.agent.md`) or a typical
