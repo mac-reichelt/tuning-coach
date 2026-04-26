@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.4](https://github.com/mac-reichelt/tuning-coach/compare/sidecar-v0.1.3...sidecar-v0.1.4) (2026-04-26)
+
+
+### Features
+
+* **sidecar:** add storage accessors for recommendations table + car_setups read ([#84](https://github.com/mac-reichelt/tuning-coach/issues/84)) ([1ad509b](https://github.com/mac-reichelt/tuning-coach/commit/1ad509b4e036b09c728e0da853f5188e1ca5eeca))
+
+## [0.1.3](https://github.com/mac-reichelt/tuning-coach/compare/sidecar-v0.1.2...sidecar-v0.1.3) (2026-04-26)
+
+
+### Features
+
+* **sidecar+docs:** adr-0003 recommendation WS payload contract + typed Rust structs + stub endpoint ([#83](https://github.com/mac-reichelt/tuning-coach/issues/83)) ([c84bd28](https://github.com/mac-reichelt/tuning-coach/commit/c84bd2857720ae9daa4f5d32b010bdbe28a57f54))
+
 ## [0.1.2](https://github.com/mac-reichelt/tuning-coach/compare/sidecar-v0.1.1...sidecar-v0.1.2) (2026-04-26)
 
 
