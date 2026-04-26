@@ -103,11 +103,7 @@ jobs:
             --data-binary @/tmp/devops-req.json > /tmp/devops-resp.json
 
           raw="$(jq -r '.choices[0].message.content // ""' /tmp/devops-resp.json)"
-          parsed="$(RAW="$raw" python3 -c 'import os,sys; s=os.environ["RAW"].strip()
-if s.startswith("```"):
-    s="\n".join(l for l in s.splitlines() if not l.strip().startswith("```")).strip()
-i,j=s.find("{"),s.rfind("}")
-print(s[i:j+1] if i!=-1 and j>=i else s)')"
+          parsed="$(RAW="$raw" python3 -c 'import os; s=os.environ["RAW"].strip(); s="\n".join(l for l in s.splitlines() if not l.strip().startswith("```")).strip() if s.startswith("```") else s; i,j=s.find("{"),s.rfind("}"); print(s[i:j+1] if i!=-1 and j>=i else s)')"
 
           if printf '%s' "$parsed" | jq -e . >/dev/null 2>&1; then
             verdict=$(printf '%s' "$parsed" | jq -r '.verdict // "COMMENT"' | tr '[:lower:]' '[:upper:]')
