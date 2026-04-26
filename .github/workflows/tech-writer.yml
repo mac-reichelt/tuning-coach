@@ -48,8 +48,6 @@ jobs:
       TW_BOT_EMAIL: tech-writer-bot@users.noreply.github.com
       TW_BOT_NAME: tuning-coach tech-writer
       MAX_DIFF_BYTES: '60000'    # ~60 KB cap for jq + LLM input
-      MAX_DOC_BYTES: '6000'      # ~6 KB per existing doc file
-      MAX_CORPUS_BYTES: '80000'  # hard cap for combined doc corpus
     steps:
       - name: Verify AUTOMATION_PAT is configured
         env:
@@ -92,16 +90,6 @@ jobs:
           # Build a single capped doc corpus as a plain file (avoids shell quoting LLM-controlled bytes).
           # Hard-cap the total corpus; once we exceed MAX_CORPUS_BYTES, stop appending.
           : > /tmp/tw-corpus.txt
-          while IFS= read -r f; do
-            [ -f "$f" ] || continue
-            current_size=$(stat -c%s /tmp/tw-corpus.txt 2>/dev/null || echo 0)
-            if [ "$current_size" -ge "${MAX_CORPUS_BYTES}" ]; then
-              echo -e "\n\n=== (corpus truncated; remaining files omitted) ===" >> /tmp/tw-corpus.txt
-              break
-            fi
-            echo -e "\n\n=== ${f} ===" >> /tmp/tw-corpus.txt
-            head -c "${MAX_DOC_BYTES}" "$f" >> /tmp/tw-corpus.txt
-          done < /tmp/tw-inventory.txt
 
           # Truncate diff before passing to jq/LLM
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H 'Accept: application/vnd.github.v3.diff' \
