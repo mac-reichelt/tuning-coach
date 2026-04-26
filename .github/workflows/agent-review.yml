@@ -182,12 +182,15 @@ jobs:
             findings="$SKIPPED_FINDINGS"
           fi
 
-          # Build body via printf into a file so LLM-controlled bytes never hit
-          # any shell substitution context (no backticks/$()/etc. evaluated).
+          # Build body via heredoc so LLM-controlled bytes never hit any
+          # shell substitution context (no backticks/$()/etc. evaluated).
+          # Heredoc with quoted limiter does not expand, so we concat parts.
           {
-            printf '🤖 **agent-review verdict:** %s\n\n' "$verdict"
-            printf '%s\n\n' "$summary"
-            printf '%s\n' "$findings"
+            echo "agent-review verdict: $verdict"
+            echo
+            echo "$summary"
+            echo
+            echo "$findings"
           } > /tmp/agent-review-body.md
 
           # Use jq --rawfile to inject the body without any shell substitution
