@@ -11,6 +11,62 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+/// The 9 valid category values for the `recommendations.category` column.
+const VALID_CATEGORIES: &[&str] = &[
+    "tires",
+    "gearing",
+    "alignment",
+    "anti_roll",
+    "springs",
+    "damping",
+    "aero",
+    "brakes",
+    "differential",
+];
+
+/// A row from the `recommendations` table.
+#[derive(Debug, PartialEq)]
+#[allow(dead_code)]
+pub(crate) struct RecommendationRow {
+    pub id: i64,
+    pub session_id: i64,
+    pub lap_id: Option<i64>,
+    pub created_at: String,
+    pub category: String,
+    pub parameter: Option<String>,
+    pub confidence: String,
+    pub delivered: bool,
+    pub dismissed: bool,
+    pub payload_json: Value,
+    pub schema_version: i32,
+}
+
+/// Typed representation of a `car_setups` row returned by [`Storage::read_car_setup`].
+#[derive(Debug)]
+#[allow(dead_code)]
+pub(crate) struct CarSetup {
+    pub setup: serde_json::Map<String, Value>,
+    pub locked_params: Vec<String>,
+    pub upgrades: serde_json::Map<String, Value>,
+    pub source: String,
+}
+
+/// Private type alias for the raw column tuple used by recommendation row mappers.
+/// Avoids repeating the long type in multiple function signatures.
+type RecommendationRawRow = (
+    i64,
+    i64,
+    Option<i64>,
+    String,
+    String,
+    Option<String>,
+    String,
+    i64,
+    i64,
+    String,
+    i32,
+);
+
 #[derive(Clone)]
 pub(crate) struct Storage {
     pool: Pool<SqliteConnectionManager>,
@@ -250,6 +306,131 @@ impl Storage {
         Ok(previous_reason)
     }
 
+    /// Insert a new recommendation row.
+    ///
+    /// Returns the `rowid` of the inserted row on success.
+    ///
+    /// # Errors
+    /// Returns [`StorageError::Schema`] if `category` is not one of the 9 valid values.
+    #[allow(dead_code)]
+    pub(crate) fn insert_recommendation(
+        &self,
+        session_id: i64,
+        lap_id: Option<i64>,
+        category: &str,
+        parameter: Option<&str>,
+        confidence: &str,
+        payload_json: &Value,
+    ) -> Result<i64, StorageError> {
+        if !VALID_CATEGORIES.contains(&category) {
+            return Err(StorageError::Schema(format!(
+                "invalid category {:?}, must be one of: {}",
+                category,
+                VALID_CATEGORIES.join(", ")
+            )));
+        }
+        let conn = self.pool.get()?;
+        conn.execute(
+            "INSERT INTO recommendations
+                (session_id, lap_id, created_at, category, parameter, confidence, payload_json)
+             VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?3, ?4, ?5, ?6)",
+            params![
+                session_id,
+                lap_id,
+                category,
+                parameter,
+                confidence,
+                payload_json.to_string(),
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Return all recommendations for a session ordered by `created_at ASC`.
+    #[allow(dead_code)]
+    pub(crate) fn list_recommendations_for_session(
+        &self,
+        session_id: i64,
+    ) -> Result<Vec<RecommendationRow>, StorageError> {
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, lap_id, created_at, category, parameter,
+                    confidence, delivered, dismissed, payload_json, schema_version
+               FROM recommendations
+              WHERE session_id = ?1
+              ORDER BY created_at ASC",
+        )?;
+        let rows = stmt.query_map(params![session_id], map_recommendation_row)?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(build_recommendation_row(row?)?);
+        }
+        Ok(result)
+    }
+
+    /// Return all recommendations associated with a specific lap ordered by `created_at ASC`.
+    #[allow(dead_code)]
+    pub(crate) fn list_recommendations_for_lap(
+        &self,
+        lap_id: i64,
+    ) -> Result<Vec<RecommendationRow>, StorageError> {
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, lap_id, created_at, category, parameter,
+                    confidence, delivered, dismissed, payload_json, schema_version
+               FROM recommendations
+              WHERE lap_id = ?1
+              ORDER BY created_at ASC",
+        )?;
+        let rows = stmt.query_map(params![lap_id], map_recommendation_row)?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(build_recommendation_row(row?)?);
+        }
+        Ok(result)
+    }
+
+    /// Look up the current setup for a car by ordinal.
+    ///
+    /// Returns `Ok(None)` when no row exists for `car_ordinal` (not an error).
+    #[allow(dead_code)]
+    pub(crate) fn read_car_setup(
+        &self,
+        car_ordinal: i32,
+    ) -> Result<Option<CarSetup>, StorageError> {
+        let conn = self.pool.get()?;
+        let result = conn.query_row(
+            "SELECT setup_json, locked_params_json, upgrades_json, source
+               FROM car_setups
+              WHERE car_ordinal = ?1",
+            params![car_ordinal],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        );
+        match result {
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Sqlite(e)),
+            Ok((setup_json, locked_params_json, upgrades_json, source)) => {
+                let setup = serde_json::from_str::<serde_json::Map<String, Value>>(&setup_json)?;
+                let locked_params = serde_json::from_str::<Vec<String>>(&locked_params_json)?;
+                let upgrades =
+                    serde_json::from_str::<serde_json::Map<String, Value>>(&upgrades_json)?;
+                Ok(Some(CarSetup {
+                    setup,
+                    locked_params,
+                    upgrades,
+                    source,
+                }))
+            }
+        }
+    }
+
     pub(crate) fn insert_hotkey_event(
         &self,
         session_id: i64,
@@ -392,6 +573,9 @@ pub(crate) enum StorageError {
         #[source]
         source: rusqlite::Error,
     },
+    #[allow(dead_code)]
+    #[error("schema constraint violated: {0}")]
+    Schema(String),
 }
 
 #[derive(Debug)]
@@ -577,6 +761,57 @@ fn parse_dirty_reasons_json(serialized: &str) -> Vec<String> {
     }
 }
 
+/// Extract raw column values from a `recommendations` row.
+#[allow(dead_code)]
+fn map_recommendation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecommendationRawRow> {
+    Ok((
+        row.get::<_, i64>(0)?,
+        row.get::<_, i64>(1)?,
+        row.get::<_, Option<i64>>(2)?,
+        row.get::<_, String>(3)?,
+        row.get::<_, String>(4)?,
+        row.get::<_, Option<String>>(5)?,
+        row.get::<_, String>(6)?,
+        row.get::<_, i64>(7)?,
+        row.get::<_, i64>(8)?,
+        row.get::<_, String>(9)?,
+        row.get::<_, i32>(10)?,
+    ))
+}
+
+/// Convert the raw tuple from [`map_recommendation_row`] into a [`RecommendationRow`].
+#[allow(dead_code)]
+fn build_recommendation_row(
+    (
+        id,
+        session_id,
+        lap_id,
+        created_at,
+        category,
+        parameter,
+        confidence,
+        delivered,
+        dismissed,
+        payload_json_str,
+        schema_version,
+    ): RecommendationRawRow,
+) -> Result<RecommendationRow, StorageError> {
+    let payload_json = serde_json::from_str(&payload_json_str)?;
+    Ok(RecommendationRow {
+        id,
+        session_id,
+        lap_id,
+        created_at,
+        category,
+        parameter,
+        confidence,
+        delivered: delivered != 0,
+        dismissed: dismissed != 0,
+        payload_json,
+        schema_version,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs, path::Path};
@@ -686,5 +921,176 @@ mod tests {
             .expect("query session");
         assert_eq!(car_ordinal, Some(77));
         assert!(ended_at.is_some());
+    }
+
+    #[test]
+    fn recommendations_round_trip_insert_and_list_for_session() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage opens");
+
+        let session_id = storage
+            .start_session(Some(42), "0.1.0")
+            .expect("session starts");
+
+        let payload = serde_json::json!({
+            "symptom": "understeer",
+            "adjustment": "+0.5 front spring rate",
+        });
+
+        let row_id = storage
+            .insert_recommendation(
+                session_id,
+                None,
+                "springs",
+                Some("spring_rate_front"),
+                "high",
+                &payload,
+            )
+            .expect("insert succeeds");
+        assert!(row_id > 0, "rowid should be positive");
+
+        let recs = storage
+            .list_recommendations_for_session(session_id)
+            .expect("list succeeds");
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].id, row_id);
+        assert_eq!(recs[0].session_id, session_id);
+        assert_eq!(recs[0].lap_id, None);
+        assert_eq!(recs[0].category, "springs");
+        assert_eq!(recs[0].parameter, Some("spring_rate_front".to_string()));
+        assert_eq!(recs[0].confidence, "high");
+        assert_eq!(recs[0].payload_json, payload);
+        assert!(!recs[0].delivered);
+        assert!(!recs[0].dismissed);
+        assert_eq!(recs[0].schema_version, 1);
+    }
+
+    #[test]
+    fn recommendations_invalid_category_returns_schema_error() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage opens");
+
+        let session_id = storage
+            .start_session(Some(1), "0.1.0")
+            .expect("session starts");
+
+        let payload = serde_json::json!({});
+        let err = storage
+            .insert_recommendation(session_id, None, "invalid_category", None, "high", &payload)
+            .expect_err("invalid category should fail");
+
+        assert!(
+            matches!(err, super::StorageError::Schema(_)),
+            "expected StorageError::Schema, got: {err}"
+        );
+    }
+
+    #[test]
+    fn recommendations_list_for_session_is_empty_when_no_rows() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage opens");
+
+        let session_id = storage
+            .start_session(None, "0.1.0")
+            .expect("session starts");
+
+        let recs = storage
+            .list_recommendations_for_session(session_id)
+            .expect("list succeeds");
+        assert!(recs.is_empty());
+    }
+
+    #[test]
+    fn recommendations_list_for_lap_returns_only_that_lap() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage opens");
+
+        let session_id = storage
+            .start_session(Some(10), "0.1.0")
+            .expect("session starts");
+        storage.ensure_lap(session_id, 1, 0).expect("lap created");
+
+        let conn = Connection::open(temp.path().join("tuning-coach.db")).expect("open sqlite");
+        let lap_id: i64 = conn
+            .query_row(
+                "SELECT id FROM laps WHERE session_id = ?1 AND lap_number = 1",
+                rusqlite::params![session_id],
+                |row| row.get(0),
+            )
+            .expect("lap exists");
+
+        let payload = serde_json::json!({"detail": "lap-specific"});
+        storage
+            .insert_recommendation(session_id, Some(lap_id), "tires", None, "low", &payload)
+            .expect("insert with lap_id succeeds");
+
+        // Session-level rec (no lap_id) — should NOT appear in list_for_lap
+        storage
+            .insert_recommendation(
+                session_id,
+                None,
+                "aero",
+                None,
+                "medium",
+                &serde_json::json!({}),
+            )
+            .expect("session-level insert");
+
+        let recs = storage
+            .list_recommendations_for_lap(lap_id)
+            .expect("list for lap succeeds");
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].lap_id, Some(lap_id));
+        assert_eq!(recs[0].category, "tires");
+        assert_eq!(recs[0].payload_json, payload);
+    }
+
+    #[test]
+    fn car_setup_returns_none_for_unknown_ordinal() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage opens");
+
+        let result = storage
+            .read_car_setup(99_999)
+            .expect("unknown ordinal must not error");
+        assert!(result.is_none(), "expected None for unknown ordinal");
+    }
+
+    #[test]
+    fn car_setup_round_trip() {
+        let temp = TempDir::new().expect("temp dir");
+        let storage = Storage::open(temp.path()).expect("storage opens");
+
+        let conn = Connection::open(temp.path().join("tuning-coach.db")).expect("open sqlite");
+        conn.execute(
+            "INSERT INTO car_setups
+                (car_ordinal, setup_json, locked_params_json, upgrades_json, source, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                555_i64,
+                r#"{"spring_rate_front": 800.0}"#,
+                r#"["spring_rate_rear"]"#,
+                r#"{"turbo": "stage2"}"#,
+                "manual",
+                "2026-01-01T00:00:00Z",
+            ],
+        )
+        .expect("insert car_setup");
+
+        let setup = storage
+            .read_car_setup(555)
+            .expect("no error")
+            .expect("setup row found");
+
+        assert_eq!(setup.source, "manual");
+        assert_eq!(setup.locked_params, vec!["spring_rate_rear".to_string()]);
+        assert_eq!(
+            setup.setup.get("spring_rate_front"),
+            Some(&serde_json::json!(800.0))
+        );
+        assert_eq!(
+            setup.upgrades.get("turbo"),
+            Some(&serde_json::json!("stage2"))
+        );
     }
 }
