@@ -1,0 +1,10 @@
+{
+  "name": "tuning-coach",
+  "version": "0.1.1",
+  "description": "SimHub overlay for tuning-coach — surfaces real-time tuning recommendations from the Rust sidecar.",
+  "author": "mac-reichelt",
+  "homepage": "https://github.com/mac-reichelt/tuning-coach",
+  "entry": "index.html",
+  "simhub_min_version": "9.0.0",
+  "schema": 1
+}

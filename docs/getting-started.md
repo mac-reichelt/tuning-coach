@@ -27,8 +27,13 @@ cargo build --release
 
 ## Install the overlay
 
-Copy or symlink the `overlay/` directory into your SimHub `DashTemplates`
-folder, then enable it from SimHub's overlay manager.
+1. Download **`tuning-coach-overlay.zip`** from the
+   [latest release](https://github.com/mac-reichelt/tuning-coach/releases/latest).
+2. In SimHub open **Overlays → Import overlay** and select the zip.
+3. Enable **tuning-coach** in the overlays list.
+4. If you changed the sidecar `ws_listen_port`, update `config.json` inside
+   the extracted overlay folder — see
+   [overlay/README.md](../overlay/README.md) for details.
 
 ## Verify
 

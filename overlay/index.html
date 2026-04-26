@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>tuning-coach</title>
+  <link rel="stylesheet" href="overlay.css" />
+</head>
+<body>
+
+  <!-- Status bar — always visible at the top -->
+  <div id="status-bar">
+    <span id="status-dot"></span>
+    <span id="status-text">Initializing…</span>
+    <span id="lap-state"></span>
+  </div>
+
+  <!-- Recommendation panel — hidden until a recommendation arrives -->
+  <div id="recommendation-panel" role="complementary" aria-label="Tuning recommendation">
+    <div class="rec-header">
+      <span id="rec-icon" class="rec-icon"></span>
+      <span id="rec-category" class="rec-category"></span>
+      <span id="rec-confidence" class="rec-confidence"></span>
+    </div>
+    <div id="rec-title" class="rec-title"></div>
+    <div id="rec-detail" class="rec-detail"></div>
+    <div id="rec-adjustments"></div>
+    <button id="dismiss-btn" class="rec-dismiss" type="button">Dismiss</button>
+  </div>
+
+  <script type="module" src="overlay.js"></script>
+</body>
+</html>
