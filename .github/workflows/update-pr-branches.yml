@@ -23,6 +23,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Verify AUTOMATION_PAT is configured
         env:

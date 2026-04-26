@@ -19,7 +19,6 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  issues: write
 
 concurrency:
   group: copilot-finalize-${{ github.event.pull_request.number }}
@@ -37,6 +36,7 @@ jobs:
       github.event.pull_request.draft == true &&
       github.event.sender.login == 'Copilot'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Verify AUTOMATION_PAT is configured
         env:
@@ -59,10 +59,12 @@ jobs:
           set -euo pipefail
           echo "Finalizing Copilot PR #$PR in $REPO"
 
-          # Idempotent: gh pr ready is a no-op if already ready
-          gh pr ready "$PR" --repo "$REPO" || echo "::warning::pr ready failed (may already be ready)"
+          # gh pr ready is idempotent; do NOT swallow failures — a silent
+          # failure here would leave the automerge label on a still-draft PR
+          # and auto-merge.yml would skip without any error signal.
+          gh pr ready "$PR" --repo "$REPO"
 
-          # Idempotent: --add-label is a no-op if already applied
+          # --add-label is idempotent
           gh pr edit "$PR" --repo "$REPO" --add-label automerge
 
           echo "Final state:"

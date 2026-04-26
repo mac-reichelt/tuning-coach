@@ -2,7 +2,7 @@ name: ci
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, review_requested]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
