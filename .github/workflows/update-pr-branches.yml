@@ -1,0 +1,57 @@
+name: Update open PR branches after main push
+
+# Repo's branch protection requires linear history but allow_update_branch may
+# not always trigger fast enough. This fires on every push to main and updates
+# each open non-draft PR branch so the auto-merge gate sees a fresh green build
+# before merging the next PR. Mirrors the workflow used in copilot-matrix-bot.
+#
+# Uses AUTOMATION_PAT (not GITHUB_TOKEN) so the resulting branch update
+# re-triggers PR Checks (GITHUB_TOKEN-triggered updates are suppressed).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: update-pr-branches
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify AUTOMATION_PAT is configured
+        env:
+          PAT: ${{ secrets.AUTOMATION_PAT }}
+        run: |
+          if [ -z "$PAT" ]; then
+            echo "::error::AUTOMATION_PAT secret missing. GITHUB_TOKEN-triggered branch updates do not re-trigger CI."
+            exit 1
+          fi
+
+      - name: Update each open PR's branch
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_PAT }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          PRS=$(gh pr list --repo "$REPO" --state open --base main \
+            --json number,isDraft,mergeStateStatus \
+            --jq '.[] | select(.isDraft == false and (.mergeStateStatus == "BEHIND" or .mergeStateStatus == "DIRTY" or .mergeStateStatus == "UNKNOWN")) | .number')
+          if [ -z "$PRS" ]; then
+            echo "No open non-draft PRs needing update."
+            exit 0
+          fi
+          for PR in $PRS; do
+            echo "::group::PR #$PR"
+            if gh pr update-branch "$PR" --repo "$REPO" 2>&1; then
+              echo "Updated PR #$PR"
+            else
+              echo "::warning::PR #$PR could not be updated (likely conflicts); skipping"
+            fi
+            echo "::endgroup::"
+          done

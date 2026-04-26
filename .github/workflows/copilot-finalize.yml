@@ -1,0 +1,69 @@
+name: copilot-finalize
+
+# When the Copilot coding agent (`copilot-swe-agent[bot]`) finishes its work, it
+# fires `copilot_work_finished` immediately followed by `review_requested` (with
+# `actor.login == "Copilot"`, the orchestrating GitHub App). The PR remains in
+# draft state, blocking required checks (`ci.yml` skips drafts) and `auto-merge`
+# (which gates on `!draft`). This workflow auto-marks Copilot PRs ready and
+# applies the `automerge` label so the rest of the pipeline can proceed without
+# human intervention.
+#
+# SECURITY: Runs on `pull_request_target` with write privileges. Do NOT add an
+# `actions/checkout` step or execute any code from the PR head — only call the
+# GitHub API against PR metadata.
+
+on:
+  pull_request_target:
+    types: [review_requested]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: copilot-finalize-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    # Only act when:
+    #   1. PR was authored by the Copilot coding agent
+    #   2. PR is still draft (Copilot leaves PRs as draft when done)
+    #   3. The review_requested event was triggered by the orchestrating
+    #      `Copilot` app (not a human asking for review on a draft)
+    if: >-
+      github.event.pull_request.user.login == 'copilot-swe-agent[bot]' &&
+      github.event.pull_request.draft == true &&
+      github.event.sender.login == 'Copilot'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify AUTOMATION_PAT is configured
+        env:
+          PAT: ${{ secrets.AUTOMATION_PAT }}
+        run: |
+          if [ -z "$PAT" ]; then
+            echo "::error::AUTOMATION_PAT secret missing. GITHUB_TOKEN cannot trigger downstream workflows (ci.yml on ready_for_review, auto-merge.yml on labeled), so a user PAT is required."
+            exit 1
+          fi
+
+      - name: Mark PR ready and apply automerge label
+        env:
+          # User PAT required so the resulting `ready_for_review` and `labeled`
+          # events re-trigger ci.yml + auto-merge.yml. GITHUB_TOKEN-triggered
+          # events are suppressed by GitHub's anti-recursion rules.
+          GH_TOKEN: ${{ secrets.AUTOMATION_PAT }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "Finalizing Copilot PR #$PR in $REPO"
+
+          # Idempotent: gh pr ready is a no-op if already ready
+          gh pr ready "$PR" --repo "$REPO" || echo "::warning::pr ready failed (may already be ready)"
+
+          # Idempotent: --add-label is a no-op if already applied
+          gh pr edit "$PR" --repo "$REPO" --add-label automerge
+
+          echo "Final state:"
+          gh pr view "$PR" --repo "$REPO" --json isDraft,labels,mergeStateStatus
