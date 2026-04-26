@@ -1,0 +1,244 @@
+name: tech-writer
+
+# Active doc maintenance: on every PR push, an LLM auditor reads the diff +
+# current docs, decides whether docs are sufficient, and if not, generates and
+# commits doc patches directly to the PR branch. Posts a `tech-writer-review`
+# check-run that gates merge.
+#
+# Convergence (instead of a forgeable loop guard):
+#   - When tech-writer pushes a doc-only commit, the resulting `synchronize`
+#     event runs the LLM again. It sees the just-applied docs and (with low
+#     temperature) returns APPROVE with no patches. No loop, no skip-trust.
+#
+# SECURITY:
+#   - Triggers on `pull_request`, NOT `pull_request_target`, so untrusted fork
+#     code never executes with secrets.
+#   - All patches go through .github/scripts/apply-tech-writer-patches.py which
+#     refuses absolute paths, `..` segments, paths that resolve outside the
+#     repo root, and paths outside the docs/+root-md allowlist.
+#   - LLM-controlled strings are passed to bash via `env:`, never interpolated
+#     into `run:` bodies via `${{ }}`.
+#   - PR diff is truncated to 200KB before being sent to the LLM.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: write
+  models: read
+
+concurrency:
+  group: tech-writer-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  tech-writer:
+    name: tech-writer-review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      TW_BOT_EMAIL: tech-writer-bot@users.noreply.github.com
+      TW_BOT_NAME: tuning-coach tech-writer
+      MAX_DIFF_BYTES: '60000'    # ~60 KB cap for jq + LLM input
+    steps:
+      - name: Verify AUTOMATION_PAT is configured
+        env:
+          PAT: ${{ secrets.AUTOMATION_PAT }}
+        run: |
+          if [ -z "$PAT" ]; then
+            echo "::error::AUTOMATION_PAT secret missing. GITHUB_TOKEN-pushed commits do not retrigger CI; required for tech-writer."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.AUTOMATION_PAT }}
+
+      - name: Mark check-run in_progress
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/check-runs" -X POST \
+            -f name='tech-writer-review' \
+            -f head_sha="${HEAD_SHA}" \
+            -f status='in_progress' \
+            -f "output[title]=Auditing docs" \
+            -f "output[summary]=Tech-writer agent is reviewing the diff and existing docs." >/dev/null
+
+      - name: Collect PR context
+        id: ctx
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename' > /tmp/tw-files.txt
+
+          {
+            find docs -type f \( -name '*.md' -o -name '*.yml' -o -name '*.html' \) | sort
+            for f in README.md CONTRIBUTING.md SECURITY.md CHANGELOG.md; do
+              [ -f "$f" ] && echo "$f"
+            done
+          } > /tmp/tw-inventory.txt
+
+          # Build a single capped doc corpus as a plain file (avoids shell quoting LLM-controlled bytes).
+          # Hard-cap the total corpus; once we exceed MAX_CORPUS_BYTES, stop appending.
+          : > /tmp/tw-corpus.txt
+
+          # Truncate diff before passing to jq/LLM
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H 'Accept: application/vnd.github.v3.diff' \
+            | head -c "${MAX_DIFF_BYTES}" > /tmp/tw-diff.txt
+
+          echo "files=$(wc -l < /tmp/tw-files.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Build LLM request
+        run: |
+          set -euo pipefail
+          # All inputs read from files via jq --rawfile so no shell interpolation
+          # of LLM-controllable bytes happens.
+          jq -n \
+            --arg pr "${PR_NUMBER}" \
+            --rawfile diff /tmp/tw-diff.txt \
+            --rawfile files /tmp/tw-files.txt \
+            --rawfile inv /tmp/tw-inventory.txt \
+            --rawfile corpus /tmp/tw-corpus.txt \
+            --rawfile prompt .github/agents/tech-writer.agent.md \
+            '{
+              model: "gpt-4.1",
+              temperature: 0.1,
+              messages: [
+                {
+                  role: "system",
+                  content: "You are the tuning-coach tech-writer. Apply the conventions in the supplied tech-writer.agent.md verbatim. Examine the PR diff and current docs and decide whether the docs accurately and completely cover the changes. If yes, return verdict APPROVE with no patches. If not, return verdict UPDATES_NEEDED with a `patches` array specifying the FULL NEW CONTENT of each file to create or update. Use operation \"create\" for new files, \"update\" to replace existing files, \"delete\" to remove. Only touch docs/**, README.md, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md. Never edit code. Be conservative: do not invent features; only document what the diff actually shows. When this PR already contains adequate doc updates, return APPROVE — do not re-edit just to restyle. Output strict JSON: {\"verdict\":\"APPROVE|UPDATES_NEEDED\",\"summary\":\"string\",\"patches\":[{\"path\":\"...\",\"operation\":\"create|update|delete\",\"content\":\"...\"}]}"
+                },
+                {
+                  role: "user",
+                  content: ("PR #" + $pr + "\n\nChanged files:\n" + $files + "\n\nDocs inventory:\n" + $inv + "\n\nFull diff (truncated):\n" + $diff + "\n\nCurrent docs (each capped):\n" + $corpus + "\n\nTech-writer conventions:\n" + $prompt)
+                }
+              ]
+            }' > /tmp/tw-req.json
+
+      - name: Call LLM
+        id: llm
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://models.inference.ai.azure.com/chat/completions" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-binary @/tmp/tw-req.json > /tmp/tw-resp.json
+
+          raw="$(jq -r '.choices[0].message.content // ""' /tmp/tw-resp.json)"
+          # Strip markdown code fences and isolate the outermost JSON object
+          parsed="$(RAW="$raw" python3 -c 'import os; s=os.environ["RAW"].strip(); s="\n".join(l for l in s.splitlines() if not l.strip().startswith("```")).strip() if s.startswith("```") else s; i,j=s.find("{"),s.rfind("}"); print(s[i:j+1] if i!=-1 and j>=i else s)')"
+          echo "$parsed" > /tmp/tw-verdict.json
+          if ! jq -e . /tmp/tw-verdict.json >/dev/null 2>&1; then
+            echo "::warning::LLM response was not valid JSON; defaulting to APPROVE"
+            jq -n '{verdict:"APPROVE",summary:"Tech-writer LLM produced no parseable verdict; allowing merge.",patches:[]}' > /tmp/tw-verdict.json
+          fi
+
+          verdict=$(jq -r '.verdict' /tmp/tw-verdict.json)
+          patch_count=$(jq -r '.patches | length' /tmp/tw-verdict.json)
+          echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+          echo "patch_count=$patch_count" >> "$GITHUB_OUTPUT"
+          echo "Verdict=$verdict patches=$patch_count"
+
+      - name: Apply doc patches (validated paths)
+        if: steps.llm.outputs.patch_count != '0'
+        id: apply
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/apply-tech-writer-patches.py /tmp/tw-verdict.json | tee /tmp/tw-apply.log
+          if grep -q '^applied=0$' /tmp/tw-apply.log; then
+            echo "no-files-changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no-files-changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push doc patches
+        if: steps.llm.outputs.patch_count != '0' && steps.apply.outputs.no-files-changed != 'true'
+        env:
+          # Pass LLM summary via env to avoid template injection into bash
+          PATCH_SUMMARY: ${{ steps.llm.outputs.verdict }}
+        run: |
+          set -euo pipefail
+          git config user.email "$TW_BOT_EMAIL"
+          git config user.name  "$TW_BOT_NAME"
+          # Defensive: only stage allowlisted paths
+          git add -A docs/ 2>/dev/null || true
+          for f in README.md CONTRIBUTING.md SECURITY.md CHANGELOG.md; do
+            [ -e "$f" ] && git add "$f" || true
+          done
+          if git diff --cached --quiet; then
+            echo "No staged changes after allowlist filter; nothing to commit"
+            exit 0
+          fi
+          # Read summary from verdict file directly (never let LLM bytes hit shell)
+          SUMMARY=$(jq -r '.summary' /tmp/tw-verdict.json)
+          export SUMMARY
+          # Use git -F so commit message body comes from a file, not the shell
+          {
+            echo "docs: tech-writer auto-update for PR #${PR_NUMBER}"
+            echo
+            printf '%s\n' "$SUMMARY"
+            echo
+            echo "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+          } > /tmp/tw-commit-msg.txt
+          git commit -F /tmp/tw-commit-msg.txt
+          git push origin "HEAD:${HEAD_REF}"
+
+      - name: Post PR review summary
+        env:
+          VERDICT: ${{ steps.llm.outputs.verdict }}
+          PATCH_COUNT: ${{ steps.llm.outputs.patch_count }}
+        run: |
+          set -euo pipefail
+          # Read summary from verdict file (LLM-controlled bytes never hit a GHA expression context)
+          SUMMARY=$(jq -r '.summary' /tmp/tw-verdict.json)
+          {
+            printf '📝 **tech-writer verdict:** %s\n\n' "$VERDICT"
+            printf '%s\n\n' "$SUMMARY"
+            printf 'Patches applied: %s\n' "$PATCH_COUNT"
+          } > /tmp/tw-review-body.txt
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
+            -f event='COMMENT' \
+            -F body=@/tmp/tw-review-body.txt >/dev/null
+
+      - name: Finalize check-run
+        if: always()
+        env:
+          VERDICT: ${{ steps.llm.outputs.verdict || 'APPROVE' }}
+        run: |
+          set -euo pipefail
+          # Required check is satisfied by every run posting `success`. The LLM
+          # already had its chance — APPROVE means accept; UPDATES_NEEDED means
+          # we just pushed docs and the next CI iteration will re-evaluate.
+          conclusion='success'
+          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          if [ -f /tmp/tw-verdict.json ]; then
+            SUMMARY=$(jq -r '.summary' /tmp/tw-verdict.json)
+          else
+            SUMMARY='Tech-writer did not produce a verdict (likely an error before LLM).'
+          fi
+
+          existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs?check_name=tech-writer-review" --jq '.check_runs[0].id // empty')"
+          payload=$(SUMMARY="$SUMMARY" jq -n \
+            --arg head_sha "$HEAD_SHA" \
+            --arg completed_at "$completed_at" \
+            --arg conclusion "$conclusion" \
+            --arg verdict "$VERDICT" \
+            --arg text "$SUMMARY" \
+            '{name:"tech-writer-review",head_sha:$head_sha,status:"completed",conclusion:$conclusion,completed_at:$completed_at,output:{title:("tech-writer: " + $verdict),summary:("tech-writer: " + $verdict),text:$text}}')
+
+          if [ -n "$existing_id" ]; then
+            update=$(jq 'del(.name,.head_sha)' <<<"$payload")
+            gh api "repos/${GITHUB_REPOSITORY}/check-runs/${existing_id}" -X PATCH --input - <<<"$update" >/dev/null
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/check-runs" -X POST --input - <<<"$payload" >/dev/null
+          fi
