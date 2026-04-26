@@ -91,5 +91,10 @@ Dash(
         steer: 12,
         normalized_driving_line: 1,
         normalized_ai_brake_difference: -1,
+        tire_wear_front_left: None,
+        tire_wear_front_right: None,
+        tire_wear_rear_left: None,
+        tire_wear_rear_right: None,
+        track_ordinal: None,
     },
 )

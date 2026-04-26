@@ -249,15 +249,32 @@ normalized to `[0.0, 1.0]`. Speed is in km/h for HUD use.
     "fuel_frac": 0.62,
     "boost_bar": 0.8,
     "accel_g": { "x": 0.12, "y": -0.04, "z": 1.21 },
-    "lap_status": "valid"
+    "lap_status": "valid",
+    "tire_wear_frac": { "fl": 0.92, "fr": 0.91, "rl": 0.87, "rr": 0.89 },
+    "track_ordinal": 861
   }
 }
 ```
 
 `lap_status` is one of `"valid" | "dirty" | "pit" | "reset" | "out_lap"`.
-Tire wear is **not** in the Dash packet and is therefore omitted; if a future
-parser exposes it (e.g. a different game) it will be added under
-`tire_wear_frac`.
+
+`tire_wear_frac` and `track_ordinal` are present only when the sidecar receives
+a **331-byte FM 2023 Dash packet** (the game's primary format). They are `null`
+(JSON null) for legacy 311-byte Dash packets. Clients must treat these fields as
+optional (forward-compatible per the additive-change rule above).
+
+- `tire_wear_frac` — fractional tire wear per corner (FL/FR/RL/RR). Values
+  come directly from the FM 2023 UDP trailer bytes at offsets 311–326 and are
+  forwarded as-is. Based on observed captures (see
+  `sidecar/tests/fixtures/lap_validity/README.md`), the scale appears to be
+  approximately `1.0 = new tire, 0.0 = fully worn`, matching Turn 10's
+  published Data Out documentation. Treat this as **best-effort** until
+  confirmed against fresh-tire / worn-tire captures. The sidecar validates
+  that all four values are finite (rejects `NaN`/`Inf`); no range clamping is
+  applied.
+- `track_ordinal` — integer track identifier as assigned by the game.
+  `TrackOrdinal = 861` is Brands Hatch Indy per the training capture
+  (`sidecar/tests/fixtures/lap_validity/README.md`).
 
 Rationale for the field selection: every field is needed by either the
 heuristics engine (per `.github/agents/race-engineer.agent.md`) or a typical
