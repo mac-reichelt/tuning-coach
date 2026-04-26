@@ -203,7 +203,7 @@ jobs:
           PATCH_COUNT: ${{ steps.llm.outputs.patch_count }}
         run: |
           set -euo pipefail
-          # Read summary from verdict file (LLM-controlled bytes never hit a `${{ }}` expansion)
+          # Read summary from verdict file (LLM-controlled bytes never hit a GHA expression context)
           SUMMARY=$(jq -r '.summary' /tmp/tw-verdict.json)
           {
             printf '📝 **tech-writer verdict:** %s\n\n' "$VERDICT"
