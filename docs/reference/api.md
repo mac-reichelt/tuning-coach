@@ -387,3 +387,23 @@ For integration testing, the sidecar exposes:
 
 These routes inject events directly into the same WS fan-out path used by
 live producers.
+
+### `POST /admin/test/recommendation`
+
+Emits a canonical stub `recommendation` event (per
+`docs/adr/0003-phase3-recommendation-payload-extensions.md`) into the WS
+fan-out channel. No request body required. Any connected overlay client
+receives the stub within 200 ms.
+
+```
+POST /admin/test/recommendation
+```
+
+Response:
+
+```json
+{ "emitted": "recommendation" }
+```
+
+Use this endpoint to develop and test the overlay renderer before live
+heuristics land. Do not call it from production heuristic code.
