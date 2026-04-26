@@ -1,0 +1,13 @@
+{
+  "name": "tuning-coach",
+  "displayName": "Tuning Coach",
+  "version": "0.2.0",
+  "description": "Live telemetry HUD + tuning-recommendation overlay for Forza Motorsport. Connects to the tuning-coach sidecar over localhost WebSocket.",
+  "author": "tuning-coach contributors",
+  "license": "MIT",
+  "homepage": "https://github.com/mac-reichelt/tuning-coach",
+  "minSimHubVersion": "9.0",
+  "entryPoint": "index.html",
+  "type": "overlay",
+  "tags": ["forza", "motorsport", "telemetry", "tuning"]
+}
