@@ -1,0 +1,213 @@
+name: telemetry-review
+
+# LLM-driven telemetry review. Uses telemetry-expert.agent.md as the system
+# prompt. In-scope when changed files include sidecar/src/telemetry.rs,
+# sidecar/src/forza_*.rs (any forza_-prefixed Rust file), or the
+# .github/agents/telemetry-expert.agent.md itself. Verifies bidirectional
+# sync: telemetry code changes must keep the agent file current, and agent
+# file changes must reflect reality in the code. All other PRs post a passing
+# skip-success check so this can be a required check without blocking
+# unrelated work.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+  models: read
+
+concurrency:
+  group: telemetry-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  telemetry-review:
+    name: telemetry-review verdict
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Collect PR context + decide skip
+        id: ctx
+        run: |
+          set -euo pipefail
+          SKIP_REASON=""
+
+          mapfile -t FILES < <(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
+
+          # In-scope: telemetry.rs, forza_*.rs, or the telemetry-expert agent file
+          IN_SCOPE=false
+          for f in "${FILES[@]}"; do
+            if [[ "$f" == "sidecar/src/telemetry.rs" || \
+                  "$f" == ".github/agents/telemetry-expert.agent.md" ]]; then
+              IN_SCOPE=true
+              break
+            fi
+            # Match sidecar/src/forza_*.rs
+            basename_f="${f##*/}"
+            if [[ "$f" == sidecar/src/* && "$basename_f" == forza_*.rs ]]; then
+              IN_SCOPE=true
+              break
+            fi
+          done
+
+          if [[ "$IN_SCOPE" == "false" ]]; then
+            SKIP_REASON="no-telemetry-changes"
+          fi
+
+          {
+            echo "skip_reason=${SKIP_REASON}"
+            echo "changed_files<<EOF"
+            printf '%s\n' "${FILES[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run telemetry-expert agent (GitHub Models)
+        if: steps.ctx.outputs.skip_reason == ''
+        id: review
+        run: |
+          set -euo pipefail
+
+          diff_content="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H 'Accept: application/vnd.github.v3.diff')"
+          prompt_content="$(cat .github/agents/telemetry-expert.agent.md)"
+          changed_files="${{ steps.ctx.outputs.changed_files }}"
+
+          jq -n \
+            --arg pr "$PR_NUMBER" \
+            --arg base "$BASE_SHA" \
+            --arg head "$HEAD_SHA" \
+            --arg files "$changed_files" \
+            --arg diff "$diff_content" \
+            --arg prompt "$prompt_content" \
+            '{
+              model: "gpt-4.1",
+              temperature: 0.1,
+              messages: [
+                {
+                  role: "system",
+                  content: "You are the tuning-coach telemetry expert reviewer. Apply the telemetry conventions in the supplied telemetry-expert.agent.md verbatim. This PR touches Forza Motorsport telemetry code or the telemetry-expert agent definition. Verify bidirectional sync: if telemetry code (telemetry.rs, forza_*.rs) changed, check that .github/agents/telemetry-expert.agent.md is also updated to reflect any packet schema or field semantic changes; if the agent file changed, check that the code reflects the updated documentation. Flag any discrepancy between code behavior and agent documentation. Use REQUEST_CHANGES for sync violations or incorrect field semantics. Use APPROVE when code and agent doc are consistent. Use COMMENT for suggestions. Output strict JSON: {\"verdict\":\"APPROVE|REQUEST_CHANGES|COMMENT\",\"summary\":\"string\",\"findings_markdown\":\"string\"}"
+                },
+                {
+                  role: "user",
+                  content: ("Telemetry review of PR #" + $pr + ".\n\nBase SHA: " + $base + "\nHead SHA: " + $head + "\n\nChanged files:\n" + $files + "\n\nFull diff:\n" + $diff + "\n\nTelemetry expert conventions (.github/agents/telemetry-expert.agent.md):\n" + $prompt)
+                }
+              ]
+            }' > /tmp/telemetry-req.json
+
+          curl -fsSL "https://models.inference.ai.azure.com/chat/completions" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-binary @/tmp/telemetry-req.json > /tmp/telemetry-resp.json
+
+          raw="$(jq -r '.choices[0].message.content // ""' /tmp/telemetry-resp.json)"
+          parsed="$(RAW="$raw" python3 -c 'import os; s=os.environ["RAW"].strip(); s="\n".join(l for l in s.splitlines() if not l.strip().startswith("```")).strip() if s.startswith("```") else s; i,j=s.find("{"),s.rfind("}"); print(s[i:j+1] if i!=-1 and j>=i else s)')"
+
+          if printf '%s' "$parsed" | jq -e . >/dev/null 2>&1; then
+            verdict=$(printf '%s' "$parsed" | jq -r '.verdict // "COMMENT"' | tr '[:lower:]' '[:upper:]')
+            summary=$(printf '%s' "$parsed" | jq -r '.summary // "Telemetry review completed."')
+            findings=$(printf '%s' "$parsed" | jq -r '.findings_markdown // "No issues found."')
+          else
+            verdict="COMMENT"
+            summary="Telemetry response could not be parsed; posted as comment."
+            findings="$raw"
+          fi
+
+          case "$verdict" in
+            APPROVE|REQUEST_CHANGES|COMMENT) ;;
+            *) verdict="COMMENT" ;;
+          esac
+
+          {
+            echo "verdict=${verdict}"
+            echo "summary<<EOF"
+            printf '%s\n' "$summary"
+            echo "EOF"
+            echo "findings<<EOF"
+            printf '%s\n' "$findings"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set skip verdict
+        if: steps.ctx.outputs.skip_reason != ''
+        id: skipped
+        run: |
+          set -euo pipefail
+          reason="${{ steps.ctx.outputs.skip_reason }}"
+          {
+            echo "verdict=COMMENT"
+            echo "summary=Telemetry review skipped (${reason})."
+            echo "findings<<EOF"
+            echo "Telemetry review skipped for this PR (${reason})."
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish PR review (when in-scope)
+        if: steps.ctx.outputs.skip_reason == ''
+        env:
+          VERDICT: ${{ steps.review.outputs.verdict }}
+          SUMMARY: ${{ steps.review.outputs.summary }}
+          FINDINGS: ${{ steps.review.outputs.findings }}
+        run: |
+          set -euo pipefail
+          {
+            echo "telemetry-review verdict: $VERDICT"
+            echo
+            echo "$SUMMARY"
+            echo
+            echo "$FINDINGS"
+          } > /tmp/telemetry-review-body.txt
+          jq -n --rawfile body /tmp/telemetry-review-body.txt '{event:"COMMENT", body:$body}' \
+            | gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" --input - >/dev/null
+
+      - name: Publish telemetry-review check-run
+        if: always()
+        env:
+          IN_SCOPE_VERDICT: ${{ steps.review.outputs.verdict }}
+          IN_SCOPE_SUMMARY: ${{ steps.review.outputs.summary }}
+          IN_SCOPE_FINDINGS: ${{ steps.review.outputs.findings }}
+          SKIP_VERDICT: ${{ steps.skipped.outputs.verdict }}
+          SKIP_SUMMARY: ${{ steps.skipped.outputs.summary }}
+          SKIP_FINDINGS: ${{ steps.skipped.outputs.findings }}
+          SKIP_REASON: ${{ steps.ctx.outputs.skip_reason }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SKIP_REASON" ]; then
+            VERDICT="$IN_SCOPE_VERDICT"
+            SUMMARY="$IN_SCOPE_SUMMARY"
+            FINDINGS="$IN_SCOPE_FINDINGS"
+          else
+            VERDICT="$SKIP_VERDICT"
+            SUMMARY="$SKIP_SUMMARY"
+            FINDINGS="$SKIP_FINDINGS"
+          fi
+
+          conclusion='success'
+          if [ "$VERDICT" = "REQUEST_CHANGES" ]; then
+            conclusion='failure'
+          fi
+          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs?check_name=telemetry-review" --jq '.check_runs[0].id // empty')"
+          payload=$(jq -n \
+            --arg head_sha "$HEAD_SHA" \
+            --arg completed_at "$completed_at" \
+            --arg conclusion "$conclusion" \
+            --arg title "telemetry-review: $VERDICT" \
+            --arg text "$FINDINGS" \
+            '{name:"telemetry-review",head_sha:$head_sha,status:"completed",conclusion:$conclusion,completed_at:$completed_at,output:{title:$title,summary:$title,text:$text}}')
+
+          if [ -n "$existing_id" ]; then
+            update=$(jq 'del(.name,.head_sha)' <<<"$payload")
+            gh api "repos/${GITHUB_REPOSITORY}/check-runs/${existing_id}" -X PATCH --input - <<<"$update" >/dev/null
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/check-runs" -X POST --input - <<<"$payload" >/dev/null
+          fi

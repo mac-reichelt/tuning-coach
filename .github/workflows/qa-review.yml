@@ -1,0 +1,215 @@
+name: qa-review
+
+# LLM-driven QA review. Uses qa-engineer.agent.md as the system prompt.
+# In-scope when source files under sidecar/src/** or overlay/** change but no
+# corresponding test files are also touched. When src changes accompany test
+# changes, the PR passes (skip-success). Docs-only PRs are also skipped.
+# All other PRs post a passing skip-success check so this can be a required
+# check without blocking unrelated work.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+  models: read
+
+concurrency:
+  group: qa-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  qa-review:
+    name: qa-review verdict
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Collect PR context + decide skip
+        id: ctx
+        run: |
+          set -euo pipefail
+          SKIP_REASON=""
+
+          mapfile -t FILES < <(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
+
+          # Check whether any source files changed
+          HAS_SRC=false
+          HAS_TESTS=false
+          for f in "${FILES[@]}"; do
+            if [[ "$f" == sidecar/src/* || "$f" == overlay/* ]]; then
+              # Distinguish test files from source files
+              if [[ "$f" == *_test.rs || "$f" == */tests/* || \
+                    "$f" == *.test.js || "$f" == *.spec.js || \
+                    "$f" == *.test.ts || "$f" == *.spec.ts ]]; then
+                HAS_TESTS=true
+              else
+                HAS_SRC=true
+              fi
+            fi
+          done
+
+          if [[ "$HAS_SRC" == "false" ]]; then
+            # No source changes at all — skip
+            SKIP_REASON="no-source-changes"
+          elif [[ "$HAS_TESTS" == "true" ]]; then
+            # Src changes are accompanied by test changes — coverage maintained
+            SKIP_REASON="has-test-changes"
+          fi
+
+          {
+            echo "skip_reason=${SKIP_REASON}"
+            echo "changed_files<<EOF"
+            printf '%s\n' "${FILES[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run qa-engineer agent (GitHub Models)
+        if: steps.ctx.outputs.skip_reason == ''
+        id: review
+        run: |
+          set -euo pipefail
+
+          diff_content="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H 'Accept: application/vnd.github.v3.diff')"
+          prompt_content="$(cat .github/agents/qa-engineer.agent.md)"
+          changed_files="${{ steps.ctx.outputs.changed_files }}"
+
+          jq -n \
+            --arg pr "$PR_NUMBER" \
+            --arg base "$BASE_SHA" \
+            --arg head "$HEAD_SHA" \
+            --arg files "$changed_files" \
+            --arg diff "$diff_content" \
+            --arg prompt "$prompt_content" \
+            '{
+              model: "gpt-4.1",
+              temperature: 0.1,
+              messages: [
+                {
+                  role: "system",
+                  content: "You are the tuning-coach QA reviewer. Apply the QA conventions in the supplied qa-engineer.agent.md verbatim. This PR has changed source files under sidecar/src/ or overlay/ WITHOUT adding or updating test files. Your job: identify every new public function, method, or module added or modified; determine whether adequate tests exist; call out specific missing test cases. Use REQUEST_CHANGES if any new public function lacks a test. Use APPROVE if all changed public interfaces have existing or new tests. Use COMMENT for suggestions that do not block merge. Output strict JSON: {\"verdict\":\"APPROVE|REQUEST_CHANGES|COMMENT\",\"summary\":\"string\",\"findings_markdown\":\"string\"}"
+                },
+                {
+                  role: "user",
+                  content: ("QA review of PR #" + $pr + ".\n\nBase SHA: " + $base + "\nHead SHA: " + $head + "\n\nChanged files:\n" + $files + "\n\nFull diff:\n" + $diff + "\n\nQA conventions (.github/agents/qa-engineer.agent.md):\n" + $prompt)
+                }
+              ]
+            }' > /tmp/qa-req.json
+
+          curl -fsSL "https://models.inference.ai.azure.com/chat/completions" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-binary @/tmp/qa-req.json > /tmp/qa-resp.json
+
+          raw="$(jq -r '.choices[0].message.content // ""' /tmp/qa-resp.json)"
+          parsed="$(RAW="$raw" python3 -c 'import os; s=os.environ["RAW"].strip(); s="\n".join(l for l in s.splitlines() if not l.strip().startswith("```")).strip() if s.startswith("```") else s; i,j=s.find("{"),s.rfind("}"); print(s[i:j+1] if i!=-1 and j>=i else s)')"
+
+          if printf '%s' "$parsed" | jq -e . >/dev/null 2>&1; then
+            verdict=$(printf '%s' "$parsed" | jq -r '.verdict // "COMMENT"' | tr '[:lower:]' '[:upper:]')
+            summary=$(printf '%s' "$parsed" | jq -r '.summary // "QA review completed."')
+            findings=$(printf '%s' "$parsed" | jq -r '.findings_markdown // "No issues found."')
+          else
+            verdict="COMMENT"
+            summary="QA response could not be parsed; posted as comment."
+            findings="$raw"
+          fi
+
+          case "$verdict" in
+            APPROVE|REQUEST_CHANGES|COMMENT) ;;
+            *) verdict="COMMENT" ;;
+          esac
+
+          {
+            echo "verdict=${verdict}"
+            echo "summary<<EOF"
+            printf '%s\n' "$summary"
+            echo "EOF"
+            echo "findings<<EOF"
+            printf '%s\n' "$findings"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set skip verdict
+        if: steps.ctx.outputs.skip_reason != ''
+        id: skipped
+        run: |
+          set -euo pipefail
+          reason="${{ steps.ctx.outputs.skip_reason }}"
+          {
+            echo "verdict=COMMENT"
+            echo "summary=QA review skipped (${reason})."
+            echo "findings<<EOF"
+            echo "QA review skipped for this PR (${reason})."
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish PR review (when in-scope)
+        if: steps.ctx.outputs.skip_reason == ''
+        env:
+          VERDICT: ${{ steps.review.outputs.verdict }}
+          SUMMARY: ${{ steps.review.outputs.summary }}
+          FINDINGS: ${{ steps.review.outputs.findings }}
+        run: |
+          set -euo pipefail
+          {
+            echo "qa-review verdict: $VERDICT"
+            echo
+            echo "$SUMMARY"
+            echo
+            echo "$FINDINGS"
+          } > /tmp/qa-review-body.txt
+          jq -n --rawfile body /tmp/qa-review-body.txt '{event:"COMMENT", body:$body}' \
+            | gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" --input - >/dev/null
+
+      - name: Publish qa-review check-run
+        if: always()
+        env:
+          IN_SCOPE_VERDICT: ${{ steps.review.outputs.verdict }}
+          IN_SCOPE_SUMMARY: ${{ steps.review.outputs.summary }}
+          IN_SCOPE_FINDINGS: ${{ steps.review.outputs.findings }}
+          SKIP_VERDICT: ${{ steps.skipped.outputs.verdict }}
+          SKIP_SUMMARY: ${{ steps.skipped.outputs.summary }}
+          SKIP_FINDINGS: ${{ steps.skipped.outputs.findings }}
+          SKIP_REASON: ${{ steps.ctx.outputs.skip_reason }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SKIP_REASON" ]; then
+            VERDICT="$IN_SCOPE_VERDICT"
+            SUMMARY="$IN_SCOPE_SUMMARY"
+            FINDINGS="$IN_SCOPE_FINDINGS"
+          else
+            VERDICT="$SKIP_VERDICT"
+            SUMMARY="$SKIP_SUMMARY"
+            FINDINGS="$SKIP_FINDINGS"
+          fi
+
+          conclusion='success'
+          if [ "$VERDICT" = "REQUEST_CHANGES" ]; then
+            conclusion='failure'
+          fi
+          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs?check_name=qa-review" --jq '.check_runs[0].id // empty')"
+          payload=$(jq -n \
+            --arg head_sha "$HEAD_SHA" \
+            --arg completed_at "$completed_at" \
+            --arg conclusion "$conclusion" \
+            --arg title "qa-review: $VERDICT" \
+            --arg text "$FINDINGS" \
+            '{name:"qa-review",head_sha:$head_sha,status:"completed",conclusion:$conclusion,completed_at:$completed_at,output:{title:$title,summary:$title,text:$text}}')
+
+          if [ -n "$existing_id" ]; then
+            update=$(jq 'del(.name,.head_sha)' <<<"$payload")
+            gh api "repos/${GITHUB_REPOSITORY}/check-runs/${existing_id}" -X PATCH --input - <<<"$update" >/dev/null
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/check-runs" -X POST --input - <<<"$payload" >/dev/null
+          fi
