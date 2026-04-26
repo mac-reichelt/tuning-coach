@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/mac-reichelt/tuning-coach/compare/sidecar-v0.1.2...sidecar-v0.1.3) (2026-04-26)
+
+
+### Features
+
+* **sidecar+docs:** adr-0003 recommendation WS payload contract + typed Rust structs + stub endpoint ([#83](https://github.com/mac-reichelt/tuning-coach/issues/83)) ([c84bd28](https://github.com/mac-reichelt/tuning-coach/commit/c84bd2857720ae9daa4f5d32b010bdbe28a57f54))
+
 ## [0.1.2](https://github.com/mac-reichelt/tuning-coach/compare/sidecar-v0.1.1...sidecar-v0.1.2) (2026-04-26)
 
 
