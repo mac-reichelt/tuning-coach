@@ -11,7 +11,10 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-/// The 9 valid category values for the `recommendations.category` column.
+/// The valid category values for the `recommendations.category` column.
+///
+/// Must stay in sync with the snake_case serialisation of
+/// [`crate::recommendation::RecommendationCategory`].
 const VALID_CATEGORIES: &[&str] = &[
     "tires",
     "gearing",
@@ -22,7 +25,15 @@ const VALID_CATEGORIES: &[&str] = &[
     "aero",
     "brakes",
     "differential",
+    "ride_height",
+    "engine",
 ];
+
+/// The valid confidence values for the `recommendations.confidence` column.
+///
+/// Must stay in sync with the snake_case serialisation of
+/// [`crate::recommendation::RecommendationConfidence`].
+const VALID_CONFIDENCES: &[&str] = &["high", "medium", "low"];
 
 /// A row from the `recommendations` table.
 #[derive(Debug, PartialEq)]
@@ -49,6 +60,10 @@ pub(crate) struct CarSetup {
     pub locked_params: Vec<String>,
     pub upgrades: serde_json::Map<String, Value>,
     pub source: String,
+    /// Schema version of the `setup_json` shape; use to gate migrations on read.
+    pub schema_version: i32,
+    /// UTC ISO-8601 timestamp of the last update to this row.
+    pub updated_at: String,
 }
 
 /// Private type alias for the raw column tuple used by recommendation row mappers.
@@ -311,7 +326,8 @@ impl Storage {
     /// Returns the `rowid` of the inserted row on success.
     ///
     /// # Errors
-    /// Returns [`StorageError::Schema`] if `category` is not one of the 9 valid values.
+    /// Returns [`StorageError::Schema`] if `category` is not one of the valid
+    /// enum values, or if `confidence` is not `high`, `medium`, or `low`.
     #[allow(dead_code)]
     pub(crate) fn insert_recommendation(
         &self,
@@ -327,6 +343,13 @@ impl Storage {
                 "invalid category {:?}, must be one of: {}",
                 category,
                 VALID_CATEGORIES.join(", ")
+            )));
+        }
+        if !VALID_CONFIDENCES.contains(&confidence) {
+            return Err(StorageError::Schema(format!(
+                "invalid confidence {:?}, must be one of: {}",
+                confidence,
+                VALID_CONFIDENCES.join(", ")
             )));
         }
         let conn = self.pool.get()?;
@@ -400,7 +423,8 @@ impl Storage {
     ) -> Result<Option<CarSetup>, StorageError> {
         let conn = self.pool.get()?;
         let result = conn.query_row(
-            "SELECT setup_json, locked_params_json, upgrades_json, source
+            "SELECT setup_json, locked_params_json, upgrades_json, source,
+                    schema_version, updated_at
                FROM car_setups
               WHERE car_ordinal = ?1",
             params![car_ordinal],
@@ -410,13 +434,22 @@ impl Storage {
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
+                    row.get::<_, i32>(4)?,
+                    row.get::<_, String>(5)?,
                 ))
             },
         );
         match result {
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(StorageError::Sqlite(e)),
-            Ok((setup_json, locked_params_json, upgrades_json, source)) => {
+            Ok((
+                setup_json,
+                locked_params_json,
+                upgrades_json,
+                source,
+                schema_version,
+                updated_at,
+            )) => {
                 let setup = serde_json::from_str::<serde_json::Map<String, Value>>(&setup_json)?;
                 let locked_params = serde_json::from_str::<Vec<String>>(&locked_params_json)?;
                 let upgrades =
@@ -426,6 +459,8 @@ impl Storage {
                     locked_params,
                     upgrades,
                     source,
+                    schema_version,
+                    updated_at,
                 }))
             }
         }
@@ -1100,5 +1135,7 @@ mod tests {
             setup.upgrades.get("turbo"),
             Some(&serde_json::json!("stage2"))
         );
+        assert_eq!(setup.schema_version, 1);
+        assert_eq!(setup.updated_at, "2026-01-01T00:00:00Z");
     }
 }
