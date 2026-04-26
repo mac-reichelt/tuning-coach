@@ -762,6 +762,11 @@ fn parse_dirty_reasons_json(serialized: &str) -> Vec<String> {
 }
 
 /// Extract raw column values from a `recommendations` row.
+///
+/// Column positions match the SELECT order used in
+/// `list_recommendations_for_session` and `list_recommendations_for_lap`:
+/// id(0), session_id(1), lap_id(2), created_at(3), category(4), parameter(5),
+/// confidence(6), delivered(7), dismissed(8), payload_json(9), schema_version(10).
 #[allow(dead_code)]
 fn map_recommendation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RecommendationRawRow> {
     Ok((
@@ -780,6 +785,9 @@ fn map_recommendation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Recommend
 }
 
 /// Convert the raw tuple from [`map_recommendation_row`] into a [`RecommendationRow`].
+///
+/// Deserializes `payload_json` from the stored TEXT. Returns
+/// [`StorageError::Json`] if the stored value is not valid JSON.
 #[allow(dead_code)]
 fn build_recommendation_row(
     (
@@ -1067,7 +1075,7 @@ mod tests {
                 (car_ordinal, setup_json, locked_params_json, upgrades_json, source, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![
-                555_i64,
+                555,
                 r#"{"spring_rate_front": 800.0}"#,
                 r#"["spring_rate_rear"]"#,
                 r#"{"turbo": "stage2"}"#,
