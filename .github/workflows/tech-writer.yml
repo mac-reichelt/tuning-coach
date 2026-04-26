@@ -39,7 +39,6 @@ jobs:
     name: tech-writer-review
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: github.event.pull_request.user.login != 'dependabot[bot]'
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
