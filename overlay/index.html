@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tuning Coach</title>
+  <link rel="stylesheet" href="styles/overlay.css" />
+</head>
+<body>
+
+  <!-- ── Connection-status bar ─────────────────────────────── -->
+  <!--
+    Visible only when NOT connected (hidden via CSS when data-state="connected").
+    States: connected | reconnecting | down
+  -->
+  <div id="connection-status" data-state="reconnecting" role="status" aria-live="polite">
+    <span class="status-dot"></span>
+    <span id="connection-status-text">Connecting…</span>
+  </div>
+
+  <!-- ── Lap-status badge ──────────────────────────────────── -->
+  <div id="lap-status" data-status="unknown" role="status" aria-label="Lap status">—</div>
+
+  <!-- ── Telemetry HUD toggle ──────────────────────────────── -->
+  <!--
+    A tiny tab on the left edge of the HUD container; tapping it toggles
+    HUD visibility. The HUD is hidden by default.
+  -->
+  <button id="hud-toggle" aria-label="Toggle telemetry HUD" title="Toggle HUD"></button>
+
+  <!-- ── Telemetry HUD ─────────────────────────────────────── -->
+  <!--
+    Populated by TelemetryHud; hidden by default, toggle via #hud-toggle.
+  -->
+  <div id="telemetry-hud" aria-label="Telemetry HUD"></div>
+
+  <!-- ── Recommendation slot ───────────────────────────────── -->
+  <!--
+    Slides in from the right when visible. Shows placeholder card until
+    Phase 7 heuristics emit a real recommendation.
+  -->
+  <div id="recommendation-slot" role="complementary" aria-label="Tuning recommendation"></div>
+
+  <script type="module">
+    import { WsClient }           from './src/ws-client.js';
+    import { TelemetryHud }       from './src/telemetry-hud.js';
+    import { LapStatus }          from './src/lap-status.js';
+    import { RecommendationSlot } from './src/recommendation-slot.js';
+
+    // ── Init components ──────────────────────────────────────
+
+    const hud    = new TelemetryHud(document.getElementById('telemetry-hud'));
+    const badge  = new LapStatus(document.getElementById('lap-status'));
+    const slot   = new RecommendationSlot(document.getElementById('recommendation-slot'));
+
+    // ── Connection-status UI ─────────────────────────────────
+
+    const statusEl   = document.getElementById('connection-status');
+    const statusText = document.getElementById('connection-status-text');
+
+    function setConnectionState(state) {
+      statusEl.dataset.state = state;
+      const labels = {
+        connected:    'Connected',
+        reconnecting: 'Reconnecting…',
+        down:         'Sidecar offline',
+      };
+      statusText.textContent = labels[state] ?? state;
+    }
+
+    // ── WebSocket client ─────────────────────────────────────
+
+    // Allow overriding the sidecar WS URL for development/testing:
+    //   index.html?ws=ws://127.0.0.1:39000/ws
+    const params = new URLSearchParams(location.search);
+    const WS_URL = params.get('ws') ?? 'ws://127.0.0.1:38920/ws';
+
+    const client = new WsClient(WS_URL);
+
+    client.addEventListener('statechange', (ev) => {
+      setConnectionState(ev.detail.state);
+    });
+
+    // Apply user preferences from hello/session_started if present
+    client.addEventListener('hello', (ev) => {
+      // Future: read preferred speed unit from ev.detail.user_preferences
+    });
+
+    client.addEventListener('telemetry', (ev) => {
+      const data = ev.detail;
+      hud.update(data);
+      badge.updateFromTelemetry(data);
+    });
+
+    client.addEventListener('recommendation', (ev) => {
+      slot.showRecommendation(ev.detail);
+    });
+
+    // Session start/end — clear lap status on new session
+    client.addEventListener('session_started', () => {
+      badge.set('unknown');
+    });
+
+    client.addEventListener('session_ended', () => {
+      badge.set('unknown');
+    });
+
+    // lap_dirty_detected — immediately flip badge even before next telemetry tick
+    client.addEventListener('lap_dirty_detected', () => {
+      badge.set('dirty');
+    });
+
+    // lap_completed — reset to valid for the new lap
+    client.addEventListener('lap_completed', () => {
+      badge.set('valid');
+    });
+
+    // WsClient manages 'reconnecting' → 'down' state internally after repeated
+    // failed attempts; just reflect it in the status bar UI.
+
+    // ── HUD toggle ───────────────────────────────────────────
+
+    document.getElementById('hud-toggle').addEventListener('click', () => {
+      hud.toggle();
+    });
+
+    // ── Start ────────────────────────────────────────────────
+
+    client.connect();
+  </script>
+</body>
+</html>
