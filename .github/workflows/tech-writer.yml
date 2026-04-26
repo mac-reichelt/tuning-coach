@@ -140,12 +140,7 @@ jobs:
 
           raw="$(jq -r '.choices[0].message.content // ""' /tmp/tw-resp.json)"
           # Strip markdown code fences and isolate the outermost JSON object
-          parsed="$(RAW="$raw" python3 -c 'import os
-s=os.environ["RAW"].strip()
-if s.startswith("```"):
-    s="\n".join(l for l in s.splitlines() if not l.strip().startswith("```")).strip()
-i,j=s.find("{"),s.rfind("}")
-print(s[i:j+1] if i!=-1 and j>=i else s)')"
+          parsed="$(RAW="$raw" python3 -c 'import os; s=os.environ["RAW"].strip(); s="\n".join(l for l in s.splitlines() if not l.strip().startswith("```")).strip() if s.startswith("```") else s; i,j=s.find("{"),s.rfind("}"); print(s[i:j+1] if i!=-1 and j>=i else s)')"
           echo "$parsed" > /tmp/tw-verdict.json
           if ! jq -e . /tmp/tw-verdict.json >/dev/null 2>&1; then
             echo "::warning::LLM response was not valid JSON; defaulting to APPROVE"
