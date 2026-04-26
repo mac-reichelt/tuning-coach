@@ -3,24 +3,32 @@ name: tech-writer
 # Active doc maintenance: on every PR push, an LLM auditor reads the diff +
 # current docs, decides whether docs are sufficient, and if not, generates and
 # commits doc patches directly to the PR branch. Posts a `tech-writer-review`
-# check-run that gates merge (configured in branch protection).
+# check-run that gates merge.
 #
-# Loop prevention: skip if the last commit was made by this workflow itself
-# (committer email == tech-writer-bot@users.noreply.github.com).
+# Convergence (instead of a forgeable loop guard):
+#   - When tech-writer pushes a doc-only commit, the resulting `synchronize`
+#     event runs the LLM again. It sees the just-applied docs and (with low
+#     temperature) returns APPROVE with no patches. No loop, no skip-trust.
 #
-# SECURITY: Runs on `pull_request` (NOT `pull_request_target`) so untrusted
-# fork code never executes with secrets. We only edit `docs/**` and root
-# markdown files; we never run any code from the PR.
+# SECURITY:
+#   - Triggers on `pull_request`, NOT `pull_request_target`, so untrusted fork
+#     code never executes with secrets.
+#   - All patches go through .github/scripts/apply-tech-writer-patches.py which
+#     refuses absolute paths, `..` segments, paths that resolve outside the
+#     repo root, and paths outside the docs/+root-md allowlist.
+#   - LLM-controlled strings are passed to bash via `env:`, never interpolated
+#     into `run:` bodies via `${{ }}`.
+#   - PR diff is truncated to 200KB before being sent to the LLM.
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
-  contents: write        # push doc patches to PR branch
-  pull-requests: write   # post review summary
-  checks: write          # publish tech-writer-review check-run
-  models: read           # GitHub Models inference
+  contents: write
+  pull-requests: write
+  checks: write
+  models: read
 
 concurrency:
   group: tech-writer-${{ github.event.pull_request.number }}
@@ -37,16 +45,17 @@ jobs:
       PR_NUMBER: ${{ github.event.pull_request.number }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       HEAD_REF: ${{ github.event.pull_request.head.ref }}
-      BASE_SHA: ${{ github.event.pull_request.base.sha }}
       TW_BOT_EMAIL: tech-writer-bot@users.noreply.github.com
       TW_BOT_NAME: tuning-coach tech-writer
+      MAX_DIFF_BYTES: '204800'   # 200 KB cap for jq + LLM input
+      MAX_DOC_BYTES: '32768'     # 32 KB per existing doc file
     steps:
       - name: Verify AUTOMATION_PAT is configured
         env:
           PAT: ${{ secrets.AUTOMATION_PAT }}
         run: |
           if [ -z "$PAT" ]; then
-            echo "::error::AUTOMATION_PAT secret missing. GITHUB_TOKEN-pushed commits do not retrigger CI; required for tech-writer to push doc patches."
+            echo "::error::AUTOMATION_PAT secret missing. GITHUB_TOKEN-pushed commits do not retrigger CI; required for tech-writer."
             exit 1
           fi
 
@@ -54,24 +63,9 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
-          # Use PAT so future pushes from this workflow re-trigger CI
           token: ${{ secrets.AUTOMATION_PAT }}
 
-      - name: Loop guard — skip if last commit is from tech-writer
-        id: guard
-        run: |
-          set -euo pipefail
-          last_email=$(git log -1 --format=%ae HEAD)
-          echo "Last commit author email: $last_email"
-          if [ "$last_email" = "$TW_BOT_EMAIL" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Last commit was by tech-writer; skipping to prevent loop"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Mark check-run in_progress
-        if: steps.guard.outputs.skip == 'false'
         run: |
           set -euo pipefail
           gh api "repos/${GITHUB_REPOSITORY}/check-runs" -X POST \
@@ -82,201 +76,175 @@ jobs:
             -f "output[summary]=Tech-writer agent is reviewing the diff and existing docs." >/dev/null
 
       - name: Collect PR context
-        if: steps.guard.outputs.skip == 'false'
         id: ctx
         run: |
           set -euo pipefail
-          # Files changed in this PR (excluding the docs the agent might touch
-          # — we still include them so the agent sees prior doc edits)
-          mapfile -t FILES < <(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
-          {
-            echo "changed_files<<EOF"
-            printf '%s\n' "${FILES[@]}"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename' > /tmp/tw-files.txt
 
-          # Snapshot of all current docs (relative paths only — content fetched on demand by Python below)
           {
-            echo "docs_inventory<<EOF"
             find docs -type f \( -name '*.md' -o -name '*.yml' -o -name '*.html' \) | sort
-            ls -1 README.md CONTRIBUTING.md SECURITY.md CHANGELOG.md 2>/dev/null || true
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+            for f in README.md CONTRIBUTING.md SECURITY.md CHANGELOG.md; do
+              [ -f "$f" ] && echo "$f"
+            done
+          } > /tmp/tw-inventory.txt
 
-      - name: Run tech-writer LLM pass
-        if: steps.guard.outputs.skip == 'false'
-        id: llm
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/tw
-
-          diff_content="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H 'Accept: application/vnd.github.v3.diff')"
-          prompt_content="$(cat .github/agents/tech-writer.agent.md)"
-          changed_files="${{ steps.ctx.outputs.changed_files }}"
-          docs_inventory="${{ steps.ctx.outputs.docs_inventory }}"
-
-          # Read content of each existing docs file (cap individual files at
-          # 32KB to stay within token budget)
-          docs_corpus=""
+          # Build a single capped doc corpus as a plain file (avoids shell quoting LLM-controlled bytes)
+          : > /tmp/tw-corpus.txt
           while IFS= read -r f; do
             [ -f "$f" ] || continue
-            size=$(stat -c%s "$f")
-            if [ "$size" -gt 32768 ]; then
-              docs_corpus="${docs_corpus}\n\n=== $f (truncated, original ${size} bytes) ===\n$(head -c 32768 "$f")"
-            else
-              docs_corpus="${docs_corpus}\n\n=== $f ===\n$(cat "$f")"
-            fi
-          done <<< "$docs_inventory"
+            echo -e "\n\n=== ${f} ===" >> /tmp/tw-corpus.txt
+            head -c "${MAX_DOC_BYTES}" "$f" >> /tmp/tw-corpus.txt
+          done < /tmp/tw-inventory.txt
 
+          # Truncate diff before passing to jq/LLM
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H 'Accept: application/vnd.github.v3.diff' \
+            | head -c "${MAX_DIFF_BYTES}" > /tmp/tw-diff.txt
+
+          echo "files=$(wc -l < /tmp/tw-files.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Build LLM request
+        run: |
+          set -euo pipefail
+          # All inputs read from files via jq --rawfile so no shell interpolation
+          # of LLM-controllable bytes happens.
           jq -n \
-            --arg diff "$diff_content" \
-            --arg files "$changed_files" \
-            --arg inv "$docs_inventory" \
-            --arg corpus "$docs_corpus" \
-            --arg prompt "$prompt_content" \
+            --arg pr "${PR_NUMBER}" \
+            --rawfile diff /tmp/tw-diff.txt \
+            --rawfile files /tmp/tw-files.txt \
+            --rawfile inv /tmp/tw-inventory.txt \
+            --rawfile corpus /tmp/tw-corpus.txt \
+            --rawfile prompt .github/agents/tech-writer.agent.md \
             '{
               model: "gpt-4.1",
               temperature: 0.1,
               messages: [
                 {
                   role: "system",
-                  content: "You are the tuning-coach tech-writer. Apply the conventions in the supplied tech-writer.agent.md verbatim. Your job: examine the PR diff and the current docs, decide whether the docs accurately and completely cover the changes. If yes, return verdict APPROVE with no patches. If no, return verdict UPDATES_NEEDED with a `patches` array specifying the FULL NEW CONTENT of each file to create or update. Use operation \"create\" for new files, \"update\" to replace existing files, \"delete\" to remove. Only touch docs/**, README.md, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md. Never edit code. Be conservative: do not invent features; only document what the diff actually shows. Output strict JSON: {\"verdict\":\"APPROVE|UPDATES_NEEDED\",\"summary\":\"string\",\"patches\":[{\"path\":\"...\",\"operation\":\"create|update|delete\",\"content\":\"...\"}]}"
+                  content: "You are the tuning-coach tech-writer. Apply the conventions in the supplied tech-writer.agent.md verbatim. Examine the PR diff and current docs and decide whether the docs accurately and completely cover the changes. If yes, return verdict APPROVE with no patches. If not, return verdict UPDATES_NEEDED with a `patches` array specifying the FULL NEW CONTENT of each file to create or update. Use operation \"create\" for new files, \"update\" to replace existing files, \"delete\" to remove. Only touch docs/**, README.md, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md. Never edit code. Be conservative: do not invent features; only document what the diff actually shows. When this PR already contains adequate doc updates, return APPROVE — do not re-edit just to restyle. Output strict JSON: {\"verdict\":\"APPROVE|UPDATES_NEEDED\",\"summary\":\"string\",\"patches\":[{\"path\":\"...\",\"operation\":\"create|update|delete\",\"content\":\"...\"}]}"
                 },
                 {
                   role: "user",
-                  content: ("PR #" + $files + "\n\nChanged files:\n" + $files + "\n\nFull diff:\n" + $diff + "\n\nCurrent docs inventory:\n" + $inv + "\n\nCurrent docs content:\n" + $corpus + "\n\nTech-writer conventions (.github/agents/tech-writer.agent.md):\n" + $prompt)
+                  content: ("PR #" + $pr + "\n\nChanged files:\n" + $files + "\n\nDocs inventory:\n" + $inv + "\n\nFull diff (truncated):\n" + $diff + "\n\nCurrent docs (each capped):\n" + $corpus + "\n\nTech-writer conventions:\n" + $prompt)
                 }
               ]
-            }' > /tmp/tw/req.json
+            }' > /tmp/tw-req.json
 
+      - name: Call LLM
+        id: llm
+        run: |
+          set -euo pipefail
           curl -fsSL "https://models.inference.ai.azure.com/chat/completions" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data-binary @/tmp/tw/req.json > /tmp/tw/resp.json
+            --data-binary @/tmp/tw-req.json > /tmp/tw-resp.json
 
-          raw="$(jq -r '.choices[0].message.content // ""' /tmp/tw/resp.json)"
-          # Strip markdown code fences if present
-          parsed="$(RAW="$raw" python3 -c 'import os,sys; s=os.environ["RAW"].strip();
+          raw="$(jq -r '.choices[0].message.content // ""' /tmp/tw-resp.json)"
+          # Strip markdown code fences and isolate the outermost JSON object
+          parsed="$(RAW="$raw" python3 -c 'import os
+s=os.environ["RAW"].strip()
 if s.startswith("```"):
     s="\n".join(l for l in s.splitlines() if not l.strip().startswith("```")).strip()
 i,j=s.find("{"),s.rfind("}")
 print(s[i:j+1] if i!=-1 and j>=i else s)')"
-
-          echo "$parsed" > /tmp/tw/verdict.json
-          if ! jq -e . /tmp/tw/verdict.json >/dev/null 2>&1; then
+          echo "$parsed" > /tmp/tw-verdict.json
+          if ! jq -e . /tmp/tw-verdict.json >/dev/null 2>&1; then
             echo "::warning::LLM response was not valid JSON; defaulting to APPROVE"
-            jq -n '{verdict:"APPROVE",summary:"Tech-writer LLM produced no parseable verdict; allowing merge.",patches:[]}' > /tmp/tw/verdict.json
+            jq -n '{verdict:"APPROVE",summary:"Tech-writer LLM produced no parseable verdict; allowing merge.",patches:[]}' > /tmp/tw-verdict.json
           fi
 
-          verdict=$(jq -r '.verdict' /tmp/tw/verdict.json)
-          summary=$(jq -r '.summary' /tmp/tw/verdict.json)
-          patch_count=$(jq -r '.patches | length' /tmp/tw/verdict.json)
+          verdict=$(jq -r '.verdict' /tmp/tw-verdict.json)
+          patch_count=$(jq -r '.patches | length' /tmp/tw-verdict.json)
           echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
           echo "patch_count=$patch_count" >> "$GITHUB_OUTPUT"
-          {
-            echo "summary<<EOF"
-            echo "$summary"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-          echo "Verdict: $verdict | patches: $patch_count"
+          echo "Verdict=$verdict patches=$patch_count"
 
-      - name: Apply doc patches
-        if: steps.guard.outputs.skip == 'false' && steps.llm.outputs.patch_count != '0'
+      - name: Apply doc patches (validated paths)
+        if: steps.llm.outputs.patch_count != '0'
         id: apply
         run: |
           set -euo pipefail
-          # Allowlist of paths the tech-writer is permitted to touch
-          allowed_re='^(docs/|README\.md$|CONTRIBUTING\.md$|SECURITY\.md$|CHANGELOG\.md$)'
-          touched=()
-          while read -r entry; do
-            path=$(jq -r '.path' <<<"$entry")
-            op=$(jq -r '.operation' <<<"$entry")
-            if ! [[ "$path" =~ $allowed_re ]]; then
-              echo "::warning::Refusing patch outside allowlist: $path"
-              continue
-            fi
-            case "$op" in
-              create|update)
-                mkdir -p "$(dirname "$path")"
-                jq -r '.content' <<<"$entry" > "$path"
-                touched+=("$path")
-                echo "  ${op}: $path"
-                ;;
-              delete)
-                if [ -f "$path" ]; then
-                  rm -f "$path"
-                  touched+=("$path")
-                  echo "  delete: $path"
-                fi
-                ;;
-              *)
-                echo "::warning::Unknown operation '$op' for $path"
-                ;;
-            esac
-          done < <(jq -c '.patches[]' /tmp/tw/verdict.json)
-
-          if [ "${#touched[@]}" -eq 0 ]; then
+          python3 .github/scripts/apply-tech-writer-patches.py /tmp/tw-verdict.json | tee /tmp/tw-apply.log
+          if grep -q '^applied=0$' /tmp/tw-apply.log; then
             echo "no-files-changed=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            echo "no-files-changed=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "no-files-changed=false" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push doc patches
-        if: steps.guard.outputs.skip == 'false' && steps.llm.outputs.patch_count != '0' && steps.apply.outputs.no-files-changed != 'true'
+        if: steps.llm.outputs.patch_count != '0' && steps.apply.outputs.no-files-changed != 'true'
+        env:
+          # Pass LLM summary via env to avoid template injection into bash
+          PATCH_SUMMARY: ${{ steps.llm.outputs.verdict }}
         run: |
           set -euo pipefail
           git config user.email "$TW_BOT_EMAIL"
           git config user.name  "$TW_BOT_NAME"
-          # Only stage allowlisted paths (defensive)
-          git add -A docs/ README.md CONTRIBUTING.md SECURITY.md CHANGELOG.md 2>/dev/null || true
+          # Defensive: only stage allowlisted paths
+          git add -A docs/ 2>/dev/null || true
+          for f in README.md CONTRIBUTING.md SECURITY.md CHANGELOG.md; do
+            [ -e "$f" ] && git add "$f" || true
+          done
           if git diff --cached --quiet; then
             echo "No staged changes after allowlist filter; nothing to commit"
             exit 0
           fi
-          git commit -m "docs: tech-writer auto-update for PR #${PR_NUMBER}
-
-$(jq -r '.summary' /tmp/tw/verdict.json)
-
-Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+          # Read summary from verdict file directly (never let LLM bytes hit shell)
+          SUMMARY=$(jq -r '.summary' /tmp/tw-verdict.json)
+          export SUMMARY
+          # Use git -F so commit message body comes from a file, not the shell
+          {
+            echo "docs: tech-writer auto-update for PR #${PR_NUMBER}"
+            echo
+            printf '%s\n' "$SUMMARY"
+            echo
+            echo "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+          } > /tmp/tw-commit-msg.txt
+          git commit -F /tmp/tw-commit-msg.txt
           git push origin "HEAD:${HEAD_REF}"
 
       - name: Post PR review summary
-        if: steps.guard.outputs.skip == 'false'
+        env:
+          VERDICT: ${{ steps.llm.outputs.verdict }}
+          PATCH_COUNT: ${{ steps.llm.outputs.patch_count }}
         run: |
           set -euo pipefail
-          verdict="${{ steps.llm.outputs.verdict }}"
-          summary="${{ steps.llm.outputs.summary }}"
-          patch_count="${{ steps.llm.outputs.patch_count }}"
-
-          body="📝 **tech-writer verdict:** ${verdict}
-
-${summary}
-
-Patches applied: ${patch_count}"
+          # Read summary from verdict file (LLM-controlled bytes never hit a `${{ }}` expansion)
+          SUMMARY=$(jq -r '.summary' /tmp/tw-verdict.json)
+          {
+            printf '📝 **tech-writer verdict:** %s\n\n' "$VERDICT"
+            printf '%s\n\n' "$SUMMARY"
+            printf 'Patches applied: %s\n' "$PATCH_COUNT"
+          } > /tmp/tw-review-body.txt
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
             -f event='COMMENT' \
-            -f body="$body" >/dev/null
+            -F body=@/tmp/tw-review-body.txt >/dev/null
 
       - name: Finalize check-run
-        if: always() && steps.guard.outputs.skip == 'false'
+        if: always()
+        env:
+          VERDICT: ${{ steps.llm.outputs.verdict || 'APPROVE' }}
         run: |
           set -euo pipefail
-          verdict="${{ steps.llm.outputs.verdict || 'APPROVE' }}"
-          summary="${{ steps.llm.outputs.summary || 'Tech-writer skipped (no verdict produced).' }}"
-          # APPROVE = success (gates open); UPDATES_NEEDED + commit pushed = success too
-          # (next CI iteration will re-evaluate against the new HEAD). The required
-          # check is satisfied by the most recent run's success.
+          # Required check is satisfied by every run posting `success`. The LLM
+          # already had its chance — APPROVE means accept; UPDATES_NEEDED means
+          # we just pushed docs and the next CI iteration will re-evaluate.
           conclusion='success'
+          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          if [ -f /tmp/tw-verdict.json ]; then
+            SUMMARY=$(jq -r '.summary' /tmp/tw-verdict.json)
+          else
+            SUMMARY='Tech-writer did not produce a verdict (likely an error before LLM).'
+          fi
 
           existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs?check_name=tech-writer-review" --jq '.check_runs[0].id // empty')"
-          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          payload=$(jq -n \
+          payload=$(SUMMARY="$SUMMARY" jq -n \
             --arg head_sha "$HEAD_SHA" \
             --arg completed_at "$completed_at" \
             --arg conclusion "$conclusion" \
-            --arg title "tech-writer: $verdict" \
-            --arg text "$summary" \
-            '{name:"tech-writer-review",head_sha:$head_sha,status:"completed",conclusion:$conclusion,completed_at:$completed_at,output:{title:$title,summary:$title,text:$text}}')
+            --arg verdict "$VERDICT" \
+            --arg text "$SUMMARY" \
+            '{name:"tech-writer-review",head_sha:$head_sha,status:"completed",conclusion:$conclusion,completed_at:$completed_at,output:{title:("tech-writer: " + $verdict),summary:("tech-writer: " + $verdict),text:$text}}')
 
           if [ -n "$existing_id" ]; then
             update=$(jq 'del(.name,.head_sha)' <<<"$payload")
@@ -284,17 +252,3 @@ Patches applied: ${patch_count}"
           else
             gh api "repos/${GITHUB_REPOSITORY}/check-runs" -X POST --input - <<<"$payload" >/dev/null
           fi
-
-      - name: Skipped — finalize check-run as success
-        if: steps.guard.outputs.skip == 'true'
-        run: |
-          set -euo pipefail
-          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh api "repos/${GITHUB_REPOSITORY}/check-runs" -X POST \
-            -f name='tech-writer-review' \
-            -f head_sha="${HEAD_SHA}" \
-            -f status='completed' \
-            -f conclusion='success' \
-            -f completed_at="$completed_at" \
-            -f "output[title]=tech-writer: skipped (loop guard)" \
-            -f "output[summary]=Last commit on this PR was authored by tech-writer; skipping to prevent infinite loop." >/dev/null

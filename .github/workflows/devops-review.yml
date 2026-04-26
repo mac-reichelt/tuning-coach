@@ -149,41 +149,45 @@ print(s[i:j+1] if i!=-1 and j>=i else s)')"
 
       - name: Publish PR review (when in-scope)
         if: steps.ctx.outputs.skip_reason == ''
+        env:
+          VERDICT: ${{ steps.review.outputs.verdict }}
+          SUMMARY: ${{ steps.review.outputs.summary }}
+          FINDINGS: ${{ steps.review.outputs.findings }}
         run: |
           set -euo pipefail
-          verdict="${{ steps.review.outputs.verdict }}"
-          summary="${{ steps.review.outputs.summary }}"
-          findings="${{ steps.review.outputs.findings }}"
-
-          body=$(cat <<EOF
-          🛠️ **devops-review verdict:** ${verdict}
-
-          ${summary}
-
-          ${findings}
-          EOF
-          )
+          {
+            printf '🛠️ **devops-review verdict:** %s\n\n' "$VERDICT"
+            printf '%s\n\n' "$SUMMARY"
+            printf '%s\n' "$FINDINGS"
+          } > /tmp/devops-review-body.txt
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
             -f event='COMMENT' \
-            -f body="$body" >/dev/null
+            -F body=@/tmp/devops-review-body.txt >/dev/null
 
       - name: Publish devops-review check-run
         if: always()
+        env:
+          IN_SCOPE_VERDICT: ${{ steps.review.outputs.verdict }}
+          IN_SCOPE_SUMMARY: ${{ steps.review.outputs.summary }}
+          IN_SCOPE_FINDINGS: ${{ steps.review.outputs.findings }}
+          SKIP_VERDICT: ${{ steps.skipped.outputs.verdict }}
+          SKIP_SUMMARY: ${{ steps.skipped.outputs.summary }}
+          SKIP_FINDINGS: ${{ steps.skipped.outputs.findings }}
+          SKIP_REASON: ${{ steps.ctx.outputs.skip_reason }}
         run: |
           set -euo pipefail
-          if [[ "${{ steps.ctx.outputs.skip_reason }}" == "" ]]; then
-            verdict="${{ steps.review.outputs.verdict }}"
-            summary="${{ steps.review.outputs.summary }}"
-            findings="${{ steps.review.outputs.findings }}"
+          if [ -z "$SKIP_REASON" ]; then
+            VERDICT="$IN_SCOPE_VERDICT"
+            SUMMARY="$IN_SCOPE_SUMMARY"
+            FINDINGS="$IN_SCOPE_FINDINGS"
           else
-            verdict="${{ steps.skipped.outputs.verdict }}"
-            summary="${{ steps.skipped.outputs.summary }}"
-            findings="${{ steps.skipped.outputs.findings }}"
+            VERDICT="$SKIP_VERDICT"
+            SUMMARY="$SKIP_SUMMARY"
+            FINDINGS="$SKIP_FINDINGS"
           fi
 
-          # APPROVE / COMMENT / SKIPPED → success; only REQUEST_CHANGES blocks
           conclusion='success'
-          if [[ "$verdict" == "REQUEST_CHANGES" ]]; then
+          if [ "$VERDICT" = "REQUEST_CHANGES" ]; then
             conclusion='failure'
           fi
           completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -193,8 +197,8 @@ print(s[i:j+1] if i!=-1 and j>=i else s)')"
             --arg head_sha "$HEAD_SHA" \
             --arg completed_at "$completed_at" \
             --arg conclusion "$conclusion" \
-            --arg title "devops-review: $verdict" \
-            --arg text "$findings" \
+            --arg title "devops-review: $VERDICT" \
+            --arg text "$FINDINGS" \
             '{name:"devops-review",head_sha:$head_sha,status:"completed",conclusion:$conclusion,completed_at:$completed_at,output:{title:$title,summary:$title,text:$text}}')
 
           if [ -n "$existing_id" ]; then
