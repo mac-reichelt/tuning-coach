@@ -91,8 +91,8 @@ jobs:
           : > /tmp/tw-corpus.txt
 
           # Truncate diff before passing to jq/LLM
-          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H 'Accept: application/vnd.github.v3.diff' \
-            | head -c "${MAX_DIFF_BYTES}" > /tmp/tw-diff.txt
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H "Accept: application/vnd.github.v3.diff" > /tmp/tw-diff-full.txt
+          head -c "${MAX_DIFF_BYTES}" /tmp/tw-diff-full.txt > /tmp/tw-diff.txt
 
           echo "files=$(wc -l < /tmp/tw-files.txt)" >> "$GITHUB_OUTPUT"
 
