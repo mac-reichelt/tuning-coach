@@ -99,6 +99,7 @@ See `docs/adr/` for architecture decisions.
 | `.github/agents/MANIFEST.md` | Vendored team agent versions |
 | `.github/agents/telemetry-expert.agent.md` | Forza UDP packet schema, sim physics |
 | `.github/agents/race-engineer.agent.md` | Real-world tuning knowledge |
+| `.github/instructions/MANIFEST.md` | Vendored copilot instructions (security, workflow hardening, cloud-agent playbooks) |
 | `docs/adr/` | Architecture Decision Records |
 | `sidecar/Cargo.toml` | Rust workspace + crate |
 | `overlay/index.html` | SimHub overlay entry |
@@ -125,3 +126,6 @@ the producer's open issues for the phase 1 backlog).
 - Team workflow: `.github/agents/coordinator.agent.md`
 - Domain knowledge: `.github/agents/telemetry-expert.agent.md`,
   `.github/agents/race-engineer.agent.md`
+- Workflow / agent gotchas: `.github/instructions/llm-workflow-hardening.instructions.md`,
+  `.github/instructions/cloud-agent-ci-gate.instructions.md`,
+  `.github/instructions/cloud-agent-dirty-pr.instructions.md`
