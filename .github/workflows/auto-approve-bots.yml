@@ -20,10 +20,28 @@ jobs:
       - name: Approve PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          echo "Auto-approving PR by trusted bot author: $PR_AUTHOR"
-          gh pr review "$PR_URL" --approve \
-            --body "Auto-approved: PR author \`$PR_AUTHOR\` is on the trusted-bot allowlist."
+          # Defense-in-depth: re-validate author against allowlist in shell,
+          # in addition to the job-level `if:` gate. PR_AUTHOR comes from the
+          # webhook payload (GitHub-controlled, not user input), but we treat
+          # it as untrusted and never interpolate it into a command string.
+          case "$PR_AUTHOR" in
+            dependabot\[bot\]|copilot-swe-agent\[bot\]|github-actions\[bot\]) ;;
+            *)
+              echo "Refusing to approve: author '$PR_AUTHOR' not on allowlist" >&2
+              exit 1
+              ;;
+          esac
+          # Validate PR_NUMBER is a positive integer.
+          case "$PR_NUMBER" in
+            ''|*[!0-9]*) echo "Invalid PR_NUMBER: $PR_NUMBER" >&2; exit 1 ;;
+          esac
+          echo "Auto-approving PR #$PR_NUMBER by trusted bot: $PR_AUTHOR"
+          gh pr review "$PR_NUMBER" \
+            --repo "$REPO" \
+            --approve \
+            --body "Auto-approved: PR author is on the trusted-bot allowlist."
