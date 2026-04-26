@@ -281,3 +281,95 @@ impl Drop for SidecarProcessGuard {
         }
     }
 }
+
+#[tokio::test]
+async fn admin_stub_recommendation_arrives_within_200ms_and_matches_schema() {
+    let ws_port = find_free_port();
+    let udp_port = find_free_port();
+    let _sidecar = SidecarProcessGuard {
+        child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
+            .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
+            .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
+            .spawn()
+            .expect("sidecar should start"),
+    };
+
+    wait_for_health(ws_port).await;
+
+    let ws_url = format!("ws://127.0.0.1:{ws_port}/ws");
+    let (mut ws_client, _) = connect_async(&ws_url).await.expect("client connects");
+
+    // consume hello frame
+    let hello = next_json_text_frame(&mut ws_client).await;
+    assert_eq!(hello["type"], "hello");
+
+    let http_client = reqwest::Client::new();
+
+    // record time before trigger
+    let trigger_at = std::time::Instant::now();
+
+    let response = http_client
+        .post(format!(
+            "http://127.0.0.1:{ws_port}/admin/test/recommendation"
+        ))
+        .send()
+        .await
+        .expect("trigger stub");
+    assert!(response.status().is_success());
+    let body: serde_json::Value = response.json().await.expect("parse response");
+    assert_eq!(body["emitted"], "recommendation");
+
+    // receive the recommendation event
+    let event = wait_for_event(&mut ws_client, "recommendation").await;
+    let elapsed = trigger_at.elapsed();
+
+    // timing requirement: arrives within 200ms
+    assert!(
+        elapsed <= Duration::from_millis(200),
+        "stub recommendation took {elapsed:?} to arrive (limit: 200ms)"
+    );
+
+    // WS envelope shape (ADR-0002 + ADR-0003)
+    assert_eq!(event["type"], "recommendation");
+    assert_eq!(event["schema_version"], 1);
+    assert!(event["t_ms"].is_number(), "envelope must include t_ms");
+
+    let data = &event["data"];
+
+    // core ADR-0002 fields
+    assert!(data["id"].is_string());
+    assert!(data["session_id"].is_string());
+    assert!(data["lap_number"].is_number());
+    assert_eq!(data["category"], "springs");
+    assert!(data["title"].is_string());
+    assert!(data["detected"].is_string());
+    assert!(data["cause"].is_string());
+
+    let adj = &data["adjustment"];
+    assert!(adj.is_object());
+    assert!(adj["parameter"].is_string());
+    assert!(adj["from"].is_number());
+    assert!(adj["to"].is_number());
+    assert!(adj["step"].is_number());
+    assert!(adj["unit"].is_string());
+
+    assert_eq!(data["confidence"], "high");
+    assert!(data["caveats"].is_array());
+    assert!(data["alternatives"].is_array());
+    assert!(data["locked_fallback_used"].is_boolean());
+
+    // ADR-0003 additive fields
+    assert!(data["corners"].is_array(), "corners[] must be present");
+    assert!(
+        !data["corners"].as_array().unwrap().is_empty(),
+        "stub corners must be non-empty"
+    );
+    assert!(
+        data["needs_setup_form"].is_boolean(),
+        "needs_setup_form must be bool"
+    );
+    assert!(
+        data["tire_wear_max_at_emit"].is_number(),
+        "tire_wear_max_at_emit must be number"
+    );
+}

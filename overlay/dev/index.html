@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>tuning-coach · dev overlay</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ── 1. Connection status ───────────────────────────────────────────────── -->
+  <section class="panel" id="panel-conn" aria-label="Connection status">
+    <h2 class="panel-title">Connection</h2>
+
+    <div class="conn-row">
+      <span id="conn-dot" class="disconnected" aria-hidden="true"></span>
+      <span id="conn-status">Disconnected</span>
+    </div>
+
+    <p class="conn-meta">
+      URL: <span id="conn-url">—</span>
+    </p>
+    <p class="conn-meta">
+      Last message: <span id="conn-last-msg">—</span>
+    </p>
+    <p class="conn-meta" id="conn-schema"></p>
+  </section>
+
+  <!-- ── 2. Telemetry feed indicator ───────────────────────────────────────── -->
+  <section class="panel" id="panel-telem" aria-label="Telemetry feed">
+    <h2 class="panel-title">Telemetry Feed</h2>
+
+    <div class="telem-grid">
+      <span class="telem-label">Packet rate</span>
+      <span class="telem-value" id="telem-hz">— Hz</span>
+
+      <span class="telem-label">Variant</span>
+      <span class="telem-value" id="telem-variant">—</span>
+
+      <span class="telem-label">Lap</span>
+      <span class="telem-value" id="telem-lap">—</span>
+
+      <span class="telem-label">Speed</span>
+      <span class="telem-value" id="telem-speed">—</span>
+    </div>
+  </section>
+
+  <!-- ── 3. Lap state ───────────────────────────────────────────────────────── -->
+  <section class="panel" id="panel-lap" aria-label="Lap state">
+    <h2 class="panel-title">Lap State</h2>
+
+    <div class="lap-grid">
+      <span class="lap-label">Lap number</span>
+      <span class="lap-value" id="lap-number">—</span>
+
+      <span class="lap-label">Validity</span>
+      <span class="lap-value unknown" id="lap-validity">unknown</span>
+
+      <span class="lap-label">Dirty reason</span>
+      <span class="lap-value" id="lap-reason">—</span>
+    </div>
+  </section>
+
+  <!-- ── 5. Hotkey REST tester ──────────────────────────────────────────────── -->
+  <section class="panel" id="panel-hotkeys" aria-label="Hotkey REST tester">
+    <h2 class="panel-title">Hotkey REST Tester</h2>
+
+    <div class="hotkey-buttons">
+      <button class="hotkey-btn" data-hotkey="mark-lap-dirty"
+              title="POST /api/v1/hotkeys/mark-lap-dirty">
+        Mark Lap Dirty
+      </button>
+      <button class="hotkey-btn" data-hotkey="mark-lap-clean"
+              title="POST /api/v1/hotkeys/mark-lap-clean">
+        Mark Lap Clean
+      </button>
+      <button class="hotkey-btn" data-hotkey="force-pit-start"
+              title="POST /api/v1/hotkeys/force-pit-start">
+        Force Pit Start
+      </button>
+      <button class="hotkey-btn" data-hotkey="force-pit-end"
+              title="POST /api/v1/hotkeys/force-pit-end">
+        Force Pit End
+      </button>
+      <button class="hotkey-btn" data-hotkey="force-session-boundary"
+              title="POST /api/v1/hotkeys/force-session-boundary">
+        Force Session Boundary
+      </button>
+    </div>
+
+    <pre id="hotkey-response" aria-live="polite">Click a button to test a hotkey endpoint.</pre>
+  </section>
+
+  <!-- ── 4. Event log ───────────────────────────────────────────────────────── -->
+  <section class="panel" id="panel-log" aria-label="Event log">
+    <h2 class="panel-title">Event Log</h2>
+
+    <div class="log-controls">
+      <button id="btn-clear">Clear</button>
+      <button id="btn-pause">⏸ Pause</button>
+      <label>
+        <input type="checkbox" id="hide-telem">
+        Hide telemetry
+      </label>
+      <label>
+        <input type="checkbox" id="auto-scroll" checked>
+        Auto-scroll
+      </label>
+      <span id="log-count" aria-live="polite">0 events</span>
+    </div>
+
+    <div id="event-log" role="log" aria-label="WebSocket event log" aria-live="polite"></div>
+  </section>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>
