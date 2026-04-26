@@ -1415,6 +1415,11 @@ mod tests {
             steer: 0,
             normalized_driving_line: 0,
             normalized_ai_brake_difference: 0,
+            tire_wear_front_left: None,
+            tire_wear_front_right: None,
+            tire_wear_rear_left: None,
+            tire_wear_rear_right: None,
+            track_ordinal: None,
         }
     }
 

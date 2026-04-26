@@ -106,101 +106,45 @@ the prerequisite upgrade (race transmission, race diff, adjustable suspension, e
 
 ## Phased Roadmap
 
-### Phase 1 — Sidecar foundation
-- Rust project scaffold, CI, basic logging
-- Forza UDP packet parser ("Dash" format, full 331-byte schema)
-- SQLite schema (sessions / laps / telemetry_snapshots / recommendations /
-  car_setups / user_preferences / hotkey_events)
-- WebSocket server + REST API (telemetry stream + hotkey webhook endpoints)
-- CLI to start/stop and inspect
+> **Per-phase work lives in [GitHub milestones + project](https://github.com/users/mac-reichelt/projects/2).**
+> This document is the *architectural* source of truth (decisions, contracts, philosophy).
+> The roadmap below is an index — for current scope, status, and open issues per
+> phase, click into the milestone.
 
-### Phase 2 — Lap validity + session state machine
-- Dirty-lap detection (off-track wheel count, contact, grip discontinuity)
-- Pit-stop detection (speed in pit area, stationary state)
-- Lap reset / rewind detection (position jump, lap-time anomaly)
-- Manual override hotkey endpoints
-- Session state machine + persistence
+Roadmap reordered 2026-04-26 to optimize for hands-on user validation at every
+phase, minimal blocking deps, and earliest risk burndown.
 
-### Phase 3 — Heuristics: suspension + ride height + ARB
-- Lap segmentation
-- Suspension travel analysis (compression, rebound, bottoming)
-- Ride height baseline
-- Roll/pitch analysis → ARB and damping recommendations
-- Dirty/pit/reset laps excluded from analysis
-- Unit tests with recorded replays
+| # | Phase | Milestone | Notes |
+|---|-------|-----------|-------|
+| 1 | Sidecar foundation ✅ | [Phase 1](https://github.com/mac-reichelt/tuning-coach/milestone/1) | shipped `sidecar-v0.1.1` |
+| 2 | Lap validity + session state ✅ | [Phase 2](https://github.com/mac-reichelt/tuning-coach/milestone/2) | shipped `overlay-v0.1.1` |
+| 3 | Overlay shell (product skeleton) | [Phase 3](https://github.com/mac-reichelt/tuning-coach/milestone/3) | first user-visible phase; unblocks everything visible after |
+| 4 | Setup form + car/track ID | [Phase 4](https://github.com/mac-reichelt/tuning-coach/milestone/4) | `CarOrdinal`/`TrackOrdinal` are documented packet fields ([ref](https://forums.forza.net/t/data-out-feature-in-forza-motorsport/651333)) |
+| 5 | OCR feasibility spike | [Phase 5](https://github.com/mac-reichelt/tuning-coach/milestone/5) | bounded; ≥70% per-field accuracy bar; gates Phase 13 |
+| 6 | In-session hotkeys + Stream Deck | [Phase 6](https://github.com/mac-reichelt/tuning-coach/milestone/6) | small, self-contained; another tactile surface post-overlay |
+| 7 | Heuristics: suspension + ride height + ARB + damping | [Phase 7](https://github.com/mac-reichelt/tuning-coach/milestone/7) | first heuristic; pays trailblazer cost (segmentation, engine wiring, locked-param fallback) |
+| 8 | Heuristics: remaining categories (8a/8b/8c) | [Phase 8](https://github.com/mac-reichelt/tuning-coach/milestone/8) | 8a brakes+tires / 8b gearing+diff / 8c alignment+aero |
+| 9 | Post-session report | [Phase 9](https://github.com/mac-reichelt/tuning-coach/milestone/9) | markdown + JSON; cross-session deltas |
+| 10 | Driving-style auto-detect | [Phase 10](https://github.com/mac-reichelt/tuning-coach/milestone/10) | classifier over throttle/brake/steering |
+| 11 | Recorded session replay | [Phase 11](https://github.com/mac-reichelt/tuning-coach/milestone/11) | replay saved telemetry through heuristics + scrub UI |
+| 12 | LLM phrasing layer | [Phase 12](https://github.com/mac-reichelt/tuning-coach/milestone/12) | OpenAI-compat; feature-flagged; heuristics always primary |
+| 13 | OCR setup capture (gated by Phase 5) | [Phase 13](https://github.com/mac-reichelt/tuning-coach/milestone/13) | only if Phase 5 clears accuracy bar |
+| 14 | Multi-game abstraction | [Phase 14](https://github.com/mac-reichelt/tuning-coach/milestone/14) | iRacing or ACC as second game |
 
-### Phase 4 — Overlay (minimal HUD)
-- SimHub overlay template + WebSocket client
-- Slide-in notification on new recommendation
-- Numeric delta display + short rationale
-- Lap-status indicator (valid / dirty / pit / reset)
-- Dismiss/snooze + history toggle
+### Future / post-MVP backlog (not yet scheduled)
 
-### Phase 5 — Out-of-session setup form
-- HTML form: car upgrades installed, locked params, current setup values,
-  preferences
-- Persist via sidecar REST → SQLite `car_setups` / `user_preferences`
-- Per-car remembered between sessions
+- **Track corner database** — auto-derive named corner index per track from a
+  reference lap (curvature peaks, distance markers); replaces anonymous
+  `(distance, lat_g)` indexing introduced in Phase 7. Recommended slot:
+  between Phase 8 and Phase 9 once heuristics expose how often "same corner"
+  ambiguity matters.
 
-### Phase 6 — In-session hotkey integration
-- SimHub global-shortcut config doc + sample import
-- Sidecar webhook endpoints for each action
-- Stream Deck profile (optional but nice)
+## Cross-cutting open questions (deferrable)
 
-### Phase 7 — Heuristics: remaining tuning categories
-- Tires (pressure heuristics from temp/pressure delta if exposed; otherwise
-  setup-form-driven advice)
-- Gearing (top-speed-on-straight vs rev limit, shift points, bog detection)
-- Alignment (tire load distribution at corner apex, understeer/oversteer split)
-- Aero (high-speed corner stability vs straight-line drag)
-- Brakes (lockup detection per axle, stopping distance)
-- Differential (corner-exit wheelspin per axle, lift-off rotation)
-
-### Phase 8 — Post-session report
-- Markdown + JSON output
-- Per-lap summary, aggregate recommendations, delta vs prior session on same
-  car/track
-
-### Phase 9 — Recorded session replay
-- Replay saved telemetry through pipeline
-- Viewer UI for scrubbing
-
-### Phase 10 — Driving-style auto-detect
-- Classifier over throttle/brake/steering traces
-- Style profiles (smooth/aggressive, early/late braker, trail braker, etc.)
-- Tune recommendations adjusted per detected style
-
-### Phase 11 — Car + track database
-- Import SimHub's built-in car/track list
-- Telemetry-fingerprint identification
-- Persist identified car/track per session
-
-### Phase 12 — LLM integration (optional)
-- OpenAI-compatible client (configurable base_url + api_key)
-- Feature-flagged; heuristics always primary
-- LLM consumes structured recommendation + driver context, returns
-  style-matched explanation
-- Caching + rate limiting
-
-### Phase 13 — Stretch: in-game setup OCR
-- Windows Desktop Duplication API screen capture
-- Tesseract OCR of tuning menu screens
-- Auto-populate `car_setups` (current values + locked flags)
-- Hotkey to trigger capture from in-game menu
-
-### Phase 14 — Additional games
-- Generic telemetry abstraction layer
-- Add second game (likely iRacing or ACC)
-
-## Open questions (deferrable)
-- Report delivery: file on disk vs sidecar HTTP vs both
-- Installer vs zipped release
+- Report delivery: file on disk vs sidecar HTTP vs both (defer to Phase 9)
+- Installer vs zipped release (defer to first user release)
 - Telemetry retention policy (per session / rolling window / configurable)
 - Whether to ship a sample SimHub overlay theme separately
 
-## Next steps after plan approval
-1. Create private GitHub repo `tuning-coach` under `mac-reichelt`
-2. Scaffold Rust sidecar + SimHub overlay template, prove end-to-end with a
-   no-op recommendation
-3. Lock in SQLite schema (including car_setups + locked-param model)
-4. Phase 2: lap-validity + session state machine
+Phase-specific design questions are tracked as `[DECISIONS]` issues against
+their milestones.
