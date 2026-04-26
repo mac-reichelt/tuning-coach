@@ -5,7 +5,7 @@ use std::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
         Arc, Mutex,
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Context;
@@ -39,6 +39,7 @@ use tracing_subscriber::EnvFilter;
 
 mod hotkeys;
 mod lap_validity;
+mod recommendation;
 mod session_state;
 mod storage;
 mod telemetry;
@@ -308,6 +309,7 @@ struct HelloMessage<'a> {
 struct EventMessage<'a> {
     r#type: &'a str,
     schema_version: u16,
+    t_ms: u64,
     data: &'a Value,
 }
 
@@ -393,6 +395,10 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         .route("/ws", get(ws_handler))
         .route("/test/telemetry", post(test_emit_telemetry))
         .route("/test/recommendation", post(test_emit_recommendation))
+        .route(
+            "/admin/test/recommendation",
+            post(admin_test_emit_recommendation),
+        )
         .nest("/api/v1/hotkeys", hotkeys::router())
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http().make_span_with(
@@ -679,9 +685,14 @@ fn extract_schema_version(payload: &str) -> Option<u16> {
 }
 
 async fn send_event(socket: &mut WebSocket, message_type: &str, payload: &Value) -> Result<(), ()> {
+    let t_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
     let message = EventMessage {
         r#type: message_type,
         schema_version: SCHEMA_VERSION,
+        t_ms,
         data: payload,
     };
     let serialized = serde_json::to_string(&message).map_err(|_| ())?;
@@ -715,6 +726,19 @@ async fn test_emit_recommendation(
     Json(request): Json<InjectEventRequest>,
 ) -> impl IntoResponse {
     state.emit_recommendation(request.data);
+    Json(InjectEventResponse {
+        emitted: "recommendation",
+    })
+}
+
+/// Emits a canonical stub [`recommendation::RecommendationPayload`] into the WS
+/// fan-out channel.  Intended for overlay renderer development and integration
+/// tests.  See `docs/adr/0003-phase3-recommendation-payload-extensions.md`.
+async fn admin_test_emit_recommendation(State(state): State<AppState>) -> impl IntoResponse {
+    let stub = recommendation::stub_recommendation();
+    let payload = serde_json::to_value(&stub)
+        .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+    state.emit_recommendation(payload);
     Json(InjectEventResponse {
         emitted: "recommendation",
     })
@@ -851,6 +875,7 @@ mod tests {
         let event = EventMessage {
             r#type: "telemetry",
             schema_version: SCHEMA_VERSION,
+            t_ms: 1738012345678,
             data: &payload,
         };
         let serialized = serde_json::to_value(event).expect("serialize event");
@@ -859,6 +884,7 @@ mod tests {
             json!({
                 "type": "telemetry",
                 "schema_version": 1,
+                "t_ms": 1738012345678_u64,
                 "data": { "speed_kph": 123.4 }
             })
         );
