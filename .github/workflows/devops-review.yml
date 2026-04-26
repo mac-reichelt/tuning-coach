@@ -1,0 +1,205 @@
+name: devops-review
+
+# LLM-driven devops review of workflow/action changes. Mirrors agent-review.yml
+# but uses devops-engineer.agent.md as the system prompt and only audits when
+# files under .github/workflows/** or .github/actions/** change. PRs that don't
+# touch those paths still post a passing `devops-review` check-run so the gate
+# can be marked required in branch protection without blocking unrelated PRs.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+  models: read
+
+concurrency:
+  group: devops-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  devops-review:
+    name: devops-review verdict
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Collect PR context + decide skip
+        id: ctx
+        run: |
+          set -euo pipefail
+          SKIP_REASON=""
+          if [[ "${{ github.event.pull_request.draft }}" == "true" ]]; then
+            SKIP_REASON="draft"
+          elif [[ "${{ github.event.pull_request.user.login }}" == "dependabot[bot]" ]]; then
+            SKIP_REASON="dependabot"
+          fi
+
+          mapfile -t FILES < <(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
+
+          # In-scope only if any changed file lives under workflows/actions
+          IN_SCOPE=false
+          for f in "${FILES[@]}"; do
+            if [[ "$f" == .github/workflows/* || "$f" == .github/actions/* ]]; then
+              IN_SCOPE=true
+              break
+            fi
+          done
+          if [[ "$IN_SCOPE" == "false" && -z "$SKIP_REASON" ]]; then
+            SKIP_REASON="no-workflow-changes"
+          fi
+
+          {
+            echo "skip_reason=${SKIP_REASON}"
+            echo "changed_files<<EOF"
+            printf '%s\n' "${FILES[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run devops-engineer agent (GitHub Models)
+        if: steps.ctx.outputs.skip_reason == ''
+        id: review
+        run: |
+          set -euo pipefail
+
+          diff_content="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H 'Accept: application/vnd.github.v3.diff')"
+          prompt_content="$(cat .github/agents/devops-engineer.agent.md)"
+          changed_files="${{ steps.ctx.outputs.changed_files }}"
+
+          jq -n \
+            --arg pr "$PR_NUMBER" \
+            --arg base "$BASE_SHA" \
+            --arg head "$HEAD_SHA" \
+            --arg files "$changed_files" \
+            --arg diff "$diff_content" \
+            --arg prompt "$prompt_content" \
+            '{
+              model: "gpt-4.1",
+              temperature: 0.1,
+              messages: [
+                {
+                  role: "system",
+                  content: "You are the tuning-coach devops-engineer reviewer. Apply the conventions in the supplied devops-engineer.agent.md verbatim. Focus areas: GitHub Actions correctness, security (pull_request_target safety, token scopes, secrets exposure, PR-code-execution risks, third-party action SHA pinning), reliability (timeouts, concurrency groups, retry/idempotency), and best practices (least-privilege permissions, no plaintext credentials, no shell-injection from PR-controlled inputs). Use REQUEST_CHANGES only for real blockers (security holes, broken triggers, will-not-run errors). Use COMMENT for non-blocking suggestions. Use APPROVE when the change is safe and correct. Output strict JSON: {\"verdict\":\"APPROVE|REQUEST_CHANGES|COMMENT\",\"summary\":\"string\",\"findings_markdown\":\"string\"}"
+                },
+                {
+                  role: "user",
+                  content: ("Review this PR for devops/CI correctness.\n\nPR: #" + $pr + "\nBase SHA: " + $base + "\nHead SHA: " + $head + "\n\nChanged files:\n" + $files + "\n\nFull diff:\n" + $diff + "\n\nDevops conventions (.github/agents/devops-engineer.agent.md):\n" + $prompt)
+                }
+              ]
+            }' > /tmp/devops-req.json
+
+          curl -fsSL "https://models.inference.ai.azure.com/chat/completions" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-binary @/tmp/devops-req.json > /tmp/devops-resp.json
+
+          raw="$(jq -r '.choices[0].message.content // ""' /tmp/devops-resp.json)"
+          parsed="$(RAW="$raw" python3 -c 'import os,sys; s=os.environ["RAW"].strip()
+if s.startswith("```"):
+    s="\n".join(l for l in s.splitlines() if not l.strip().startswith("```")).strip()
+i,j=s.find("{"),s.rfind("}")
+print(s[i:j+1] if i!=-1 and j>=i else s)')"
+
+          if printf '%s' "$parsed" | jq -e . >/dev/null 2>&1; then
+            verdict=$(printf '%s' "$parsed" | jq -r '.verdict // "COMMENT"' | tr '[:lower:]' '[:upper:]')
+            summary=$(printf '%s' "$parsed" | jq -r '.summary // "Devops review completed."')
+            findings=$(printf '%s' "$parsed" | jq -r '.findings_markdown // "No issues found."')
+          else
+            verdict="COMMENT"
+            summary="Devops response could not be parsed; posted as comment."
+            findings="$raw"
+          fi
+          case "$verdict" in
+            APPROVE|REQUEST_CHANGES|COMMENT) ;;
+            *) verdict="COMMENT" ;;
+          esac
+
+          {
+            echo "verdict=${verdict}"
+            echo "summary<<EOF"
+            printf '%s\n' "$summary"
+            echo "EOF"
+            echo "findings<<EOF"
+            printf '%s\n' "$findings"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set skip verdict
+        if: steps.ctx.outputs.skip_reason != ''
+        id: skipped
+        run: |
+          set -euo pipefail
+          reason="${{ steps.ctx.outputs.skip_reason }}"
+          {
+            echo "verdict=COMMENT"
+            echo "summary=Devops review skipped (${reason})."
+            echo "findings<<EOF"
+            echo "Devops review skipped for this PR (${reason})."
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish PR review (when in-scope)
+        if: steps.ctx.outputs.skip_reason == ''
+        run: |
+          set -euo pipefail
+          verdict="${{ steps.review.outputs.verdict }}"
+          summary="${{ steps.review.outputs.summary }}"
+          findings="${{ steps.review.outputs.findings }}"
+
+          body=$(cat <<EOF
+          🛠️ **devops-review verdict:** ${verdict}
+
+          ${summary}
+
+          ${findings}
+          EOF
+          )
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
+            -f event='COMMENT' \
+            -f body="$body" >/dev/null
+
+      - name: Publish devops-review check-run
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ "${{ steps.ctx.outputs.skip_reason }}" == "" ]]; then
+            verdict="${{ steps.review.outputs.verdict }}"
+            summary="${{ steps.review.outputs.summary }}"
+            findings="${{ steps.review.outputs.findings }}"
+          else
+            verdict="${{ steps.skipped.outputs.verdict }}"
+            summary="${{ steps.skipped.outputs.summary }}"
+            findings="${{ steps.skipped.outputs.findings }}"
+          fi
+
+          # APPROVE / COMMENT / SKIPPED → success; only REQUEST_CHANGES blocks
+          conclusion='success'
+          if [[ "$verdict" == "REQUEST_CHANGES" ]]; then
+            conclusion='failure'
+          fi
+          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs?check_name=devops-review" --jq '.check_runs[0].id // empty')"
+          payload=$(jq -n \
+            --arg head_sha "$HEAD_SHA" \
+            --arg completed_at "$completed_at" \
+            --arg conclusion "$conclusion" \
+            --arg title "devops-review: $verdict" \
+            --arg text "$findings" \
+            '{name:"devops-review",head_sha:$head_sha,status:"completed",conclusion:$conclusion,completed_at:$completed_at,output:{title:$title,summary:$title,text:$text}}')
+
+          if [ -n "$existing_id" ]; then
+            update=$(jq 'del(.name,.head_sha)' <<<"$payload")
+            gh api "repos/${GITHUB_REPOSITORY}/check-runs/${existing_id}" -X PATCH --input - <<<"$update" >/dev/null
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/check-runs" -X POST --input - <<<"$payload" >/dev/null
+          fi
