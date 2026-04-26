@@ -687,7 +687,14 @@ fn extract_schema_version(payload: &str) -> Option<u16> {
 async fn send_event(socket: &mut WebSocket, message_type: &str, payload: &Value) -> Result<(), ()> {
     let t_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
+        .unwrap_or_else(|err| {
+            error!(
+                module = module_path!(),
+                %err,
+                "system clock is before Unix epoch; t_ms will be zero"
+            );
+            Duration::ZERO
+        })
         .as_millis() as u64;
     let message = EventMessage {
         r#type: message_type,

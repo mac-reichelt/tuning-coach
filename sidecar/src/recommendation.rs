@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// Tuning surface area that a recommendation targets.
 ///
-/// Serialises as snake\_case (e.g. `AntiRoll` → `"anti_roll"`).
+/// Serialises as snake_case (e.g. `AntiRoll` → `"anti_roll"`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum RecommendationCategory {
@@ -26,7 +26,7 @@ pub enum RecommendationCategory {
 
 /// Heuristic confidence level.
 ///
-/// Serialises as snake\_case (`High` → `"high"`, etc.).
+/// Serialises as snake_case (`High` → `"high"`, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum RecommendationConfidence {
