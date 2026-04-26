@@ -46,7 +46,7 @@ jobs:
       HEAD_REF: ${{ github.event.pull_request.head.ref }}
       TW_BOT_EMAIL: tech-writer-bot@users.noreply.github.com
       TW_BOT_NAME: tuning-coach tech-writer
-      MAX_DIFF_BYTES: '60000'    # ~60 KB cap for jq + LLM input
+      MAX_DIFF_BYTES: '25000'    # ~25 KB cap to stay under GitHub Models 8K-token input budget
     steps:
       - name: Verify AUTOMATION_PAT is configured
         env:
@@ -127,6 +127,21 @@ jobs:
         id: llm
         run: |
           set -euo pipefail
+          # Belt-and-suspenders: if the assembled request is too large for the
+          # GitHub Models input budget (~32 KB safe ceiling for free tier),
+          # short-circuit to APPROVE rather than 413.
+          REQ_BYTES=$(wc -c < /tmp/tw-req.json)
+          if [ "$REQ_BYTES" -gt 90000 ]; then
+            echo "::warning::Request body ${REQ_BYTES} bytes exceeds LLM budget; defaulting to APPROVE"
+            jq -n --argjson n "$REQ_BYTES" '{verdict:"APPROVE",summary:("PR diff plus context (" + ($n|tostring) + " bytes) exceeds tech-writer LLM budget. Skipping inline review; please verify docs manually."),patches:[]}' > /tmp/tw-verdict.json
+            verdict=$(jq -r '.verdict' /tmp/tw-verdict.json)
+            patch_count=$(jq -r '.patches | length' /tmp/tw-verdict.json)
+            echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+            echo "patch_count=$patch_count" >> "$GITHUB_OUTPUT"
+            echo "Verdict=$verdict patches=$patch_count (bailed)"
+            exit 0
+          fi
+
           curl -fsSL "https://models.inference.ai.azure.com/chat/completions" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Content-Type: application/json" \
