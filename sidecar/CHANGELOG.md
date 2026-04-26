@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/mac-reichelt/tuning-coach/compare/sidecar-v0.1.1...sidecar-v0.1.2) (2026-04-26)
+
+
+### Bug Fixes
+
+* **sidecar:** support FM2023 331-byte Dash packets; fix Windows WSAEMSGSIZE (os error 10040) ([#48](https://github.com/mac-reichelt/tuning-coach/issues/48)) ([53c0e12](https://github.com/mac-reichelt/tuning-coach/commit/53c0e12d73cb123e1ba9a4f4f977d47af614a85b))
+
 ## [0.1.1](https://github.com/mac-reichelt/tuning-coach/compare/sidecar-v0.1.0...sidecar-v0.1.1) (2026-04-21)
 
 

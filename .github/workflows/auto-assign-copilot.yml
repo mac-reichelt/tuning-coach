@@ -1,0 +1,62 @@
+name: Auto-assign Copilot to ready issues
+
+# When an issue is opened OR labeled `ready-for-coding-agent`, assign the
+# Copilot coding agent + repo owner. Positive-gate model: nothing happens
+# until you explicitly mark an issue ready, so epics, decision trackers, and
+# blocked work stay out of the agent's queue.
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  issues: write
+
+concurrency:
+  group: auto-assign-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  assign:
+    if: >-
+      contains(github.event.issue.labels.*.name, 'ready-for-coding-agent') &&
+      !contains(github.event.issue.labels.*.name, 'no-copilot') &&
+      !contains(github.event.issue.labels.*.name, 'blocked') &&
+      !contains(github.event.issue.labels.*.name, 'needs-decision') &&
+      !contains(github.event.issue.labels.*.name, 'epic')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify AUTOMATION_PAT is configured
+        env:
+          PAT: ${{ secrets.AUTOMATION_PAT }}
+        run: |
+          if [ -z "$PAT" ]; then
+            echo "::error::AUTOMATION_PAT secret missing. GITHUB_TOKEN cannot call replaceActorsForAssignable with the Copilot bot ID (returns FORBIDDEN)."
+            exit 1
+          fi
+
+      - name: Assign Copilot + repo owner
+        env:
+          # Must be a user PAT — GITHUB_TOKEN cannot call
+          # replaceActorsForAssignable with the Copilot bot ID (returns
+          # FORBIDDEN regardless of repo visibility).
+          GH_TOKEN: ${{ secrets.AUTOMATION_PAT }}
+          ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
+        run: |
+          set -euo pipefail
+          # Stable bot node ID for the Copilot coding agent
+          COPILOT_BOT_ID="BOT_kgDOC9w8XQ"
+          OWNER_ID=$(gh api "users/${{ github.repository_owner }}" --jq .node_id)
+
+          gh api graphql \
+            --raw-field query='mutation($i:ID!,$a:[ID!]!){
+              replaceActorsForAssignable(input:{assignableId:$i,actorIds:$a}){
+                clientMutationId
+              }
+            }' \
+            -f i="$ISSUE_NODE_ID" \
+            -f "a[]=$COPILOT_BOT_ID" \
+            -f "a[]=$OWNER_ID"
+
+          echo "Assigned Copilot + ${{ github.repository_owner }} to issue #${{ github.event.issue.number }}"
