@@ -13,11 +13,21 @@ You are a sim-racing telemetry expert. Your job is to know — and authoritative
 
 ## Forza Motorsport (2023) — UDP Telemetry
 
-Forza Motorsport (2023) emits the **Forza Motorsport 7 Data Out v2** packet
-("Dash" format) at the configured port. Same format as Forza Horizon 4/5 with
-the Sled prefix.
+Forza Motorsport (2023) emits UDP telemetry at the configured port in one of
+**three distinct formats**, discriminated by packet length:
 
-### Packet structure (331 bytes)
+| Constant | Bytes | Description |
+|----------|-------|-------------|
+| `SLED_PACKET_LEN` | 232 | Sled-only — no Dash extension |
+| `DASH_PACKET_LEN` | 311 | Legacy Dash — FM7 / FH4 / FH5 |
+| `FM2023_DASH_PACKET_LEN` | 331 | FM 2023 Dash — FM7 Dash layout + 20-byte FM 2023 trailer |
+
+FM 2023 (the primary supported game) emits **331-byte** packets. The 232-byte
+Sled-only and 311-byte legacy Dash formats are also accepted for compatibility
+with older titles (FH4, FH5, FM7). **Length is the discriminator** — always
+check `buf.len()` first; never assume a fixed size.
+
+### Packet structure (bytes 0–311: Sled + Dash extension)
 
 | Offset | Type | Field | Notes |
 |--------|------|-------|-------|
@@ -70,7 +80,25 @@ the Sled prefix.
 | 309–310 | i8 | NormalizedDrivingLine | -127..127 |
 | 310–311 | i8 | NormalizedAIBrakeDifference | -127..127 |
 
-Total: 311 bytes (Dash) or 232 bytes (Sled-only). Length is the discriminator.
+### FM 2023 trailer (bytes 311–331, present only in 331-byte packets)
+
+These five fields follow immediately after the Dash extension. They are exposed
+as `Option<…>` on `DashPacket` — `None` for legacy 311-byte packets, `Some(…)`
+for 331-byte FM 2023 packets. The WS API emits them as JSON null or a number
+accordingly (see `docs/adr/0002-ws-api-contract.md`).
+
+| Offset | Type | Field | Notes |
+|--------|------|-------|-------|
+| 311–315 | f32 | TireWearFrontLeft | 0..1 fraction; ~1.0 = new, ~0.0 = fully worn |
+| 315–319 | f32 | TireWearFrontRight | same scale |
+| 319–323 | f32 | TireWearRearLeft | same scale |
+| 323–327 | f32 | TireWearRearRight | same scale |
+| 327–331 | i32 | TrackOrdinal | integer track ID assigned by the game |
+
+Canonical fixture reference: `sidecar/tests/fixtures/lap_validity/README.md`
+(training capture confirms `TrackOrdinal = 861` = Brands Hatch Indy).
+
+Total packet sizes: **232 bytes** (Sled-only) | **311 bytes** (Legacy Dash) | **331 bytes** (FM 2023 Dash). Length is the discriminator.
 
 ### Sample rate
 
@@ -100,6 +128,12 @@ Total: 311 bytes (Dash) or 232 bytes (Sled-only). Length is the discriminator.
   edge-of-strip noise.
 - **Suspension travel**: prefer `SuspensionTravelMeters` for absolute analysis;
   `NormalizedSuspensionTravel` for "% of available travel" UI.
+- **`CarOrdinal` and `TrackOrdinal`** — integers that uniquely identify the car
+  and track within the game. `TrackOrdinal` is only present in 331-byte FM 2023
+  packets (`None` / JSON null for legacy 311-byte packets). `TrackOrdinal = 861`
+  is Brands Hatch Indy per the training capture. Use `CarOrdinal` to correlate
+  telemetry with the car-setups table; use `TrackOrdinal` for track-specific
+  heuristic tuning once available.
 
 ## Other Games (forward-looking)
 
@@ -115,8 +149,9 @@ intermediate representation. Don't try to reuse Forza-specific structs.
 
 ## Parser Implementation Guidance
 
-- **Validate length first.** Reject any packet whose length isn't exactly the
-  expected size (311 or 232 for Forza). Log + drop, don't panic.
+- **Validate length first.** Reject any packet whose length is not one of the
+  three valid sizes (232, 311, or 331 for Forza). Log + drop, don't panic. See
+  `sidecar/tests/fixtures/lap_validity/README.md` for canonical fixture data.
 - **Zero-copy parse where possible.** Use `bytemuck::from_bytes` over a packed
   struct for hot paths.
 - **Snapshot tests.** Capture real hex dumps from a recorded session into
@@ -160,4 +195,4 @@ When asked to design the parser:
    nonsense during loading screens.
 ❌ Coupling parser output to the WS API DTO — keep them decoupled; parser owns
    physics, API owns presentation.
-❌ Logging full packets — they're 311 bytes × 60 Hz = log flood.
+❌ Logging full packets — they're up to 331 bytes × 60 Hz = log flood.

@@ -92,7 +92,7 @@ Full setup: [docs/getting-started.md](docs/getting-started.md).
 - [Plan + Roadmap](docs/PLAN.md) — phased delivery
 - [Architecture Decisions](docs/adr/) — ADRs
 - [API Reference](docs/reference/api.md) — sidecar HTTP/WS API (TBD)
-- Telemetry Schema — Forza Dash packet (TBD)
+- [Telemetry Schema](.github/agents/telemetry-expert.agent.md) — Forza Dash packet (232 B Sled / 311 B legacy Dash / 331 B FM 2023 Dash)
 
 ## Heuristics Reference
 

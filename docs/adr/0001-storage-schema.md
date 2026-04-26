@@ -156,8 +156,8 @@ The hot table. Hybrid layout: blob + a thin index of common-query columns.
 | `throttle` | `INTEGER NOT NULL` | 0..255 raw |
 | `brake` | `INTEGER NOT NULL` | 0..255 raw |
 | `gear` | `INTEGER NOT NULL` | 0=R, 1..N |
-| `packet` | `BLOB NOT NULL` | raw 311-byte Forza Dash packet, little-endian |
-| `packet_format` | `INTEGER NOT NULL DEFAULT 1` | discriminator: 1=`forza_dash_v2_311b` |
+| `packet` | `BLOB NOT NULL` | raw Forza Dash packet (311 or 331 bytes), little-endian |
+| `packet_format` | `INTEGER NOT NULL DEFAULT 1` | discriminator: 1=`forza_dash_v2_311b`, 2=`forza_dash_fm2023_331b` |
 
 Indexes:
 - `idx_telemetry_session_t (session_id, t_ms)` — replay & windowed scans
@@ -276,11 +276,12 @@ PRAGMA temp_store = MEMORY;
 
 ### Negative
 
-- **Storage cost.** A 1-hour active session is ~6.6 MB of raw packets
-  (~311 B × 60 Hz × 3600 s) plus ~10–15 MB for the row overhead and
-  denormalized columns and indexes — call it **~20 MB/hour active**. A heavy
-  weekend (~10 hours) is ~200 MB. Acceptable for a desktop app; we'll add a
-  retention setting before 1.0 (open question, deferred).
+- **Storage cost.** A 1-hour active session is ~7.2 MB of raw packets
+  (~331 B × 60 Hz × 3600 s for FM 2023; ~6.7 MB for legacy 311-byte packets)
+  plus ~10–15 MB for the row overhead and denormalized columns and indexes —
+  call it **~20 MB/hour active**. A heavy weekend (~10 hours) is ~200 MB.
+  Acceptable for a desktop app; we'll add a retention setting before 1.0
+  (open question, deferred).
 - **Querying non-indexed packet fields requires reparsing.** Acceptable: those
   queries are post-session/replay paths, not hot.
 - **JSON-in-SQL** loses static schema guarantees. Mitigated with strict
@@ -379,7 +380,7 @@ PRAGMA temp_store = MEMORY;
 
 ## Storage estimates
 
-Assumptions: ~311 B per Forza Dash packet, ~60 Hz, ~150 B of denormalized
+Assumptions: ~331 B per FM 2023 Forza Dash packet (311 B for legacy Dash), ~60 Hz, ~150 B of denormalized
 columns + row overhead, ~50% index overhead on the indexed columns.
 
 | Workload | Raw bytes | With indexes | Per session (~30 min) | Per heavy week (~10 h) |
@@ -406,7 +407,7 @@ recommendations + laps but drop telemetry."
 
 - Issue [#8 — feat(sidecar): SQLite schema](https://github.com/mac-reichelt/tuning-coach/issues/8)
 - [docs/PLAN.md](../PLAN.md) — Phase 1 sidecar foundation
-- [.github/agents/telemetry-expert.agent.md](../../.github/agents/telemetry-expert.agent.md) — Forza Dash packet schema (311 B)
+- [.github/agents/telemetry-expert.agent.md](../../.github/agents/telemetry-expert.agent.md) — Forza Dash packet schema (232 B Sled / 311 B legacy Dash / 331 B FM 2023 Dash)
 - [.github/agents/race-engineer.agent.md](../../.github/agents/race-engineer.agent.md) — recommendation payload shape
 - SQLite WAL: <https://www.sqlite.org/wal.html>
 - `rusqlite` bundled feature: <https://docs.rs/rusqlite/latest/rusqlite/#bundled>
