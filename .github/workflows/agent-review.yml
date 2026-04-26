@@ -161,48 +161,59 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Publish PR review comment
+        env:
+          SKIP_REASON: ${{ steps.context.outputs.skip_reason }}
+          REVIEW_VERDICT: ${{ steps.review.outputs.verdict }}
+          REVIEW_SUMMARY: ${{ steps.review.outputs.summary }}
+          REVIEW_FINDINGS: ${{ steps.review.outputs.findings }}
+          SKIPPED_VERDICT: ${{ steps.skipped.outputs.verdict }}
+          SKIPPED_SUMMARY: ${{ steps.skipped.outputs.summary }}
+          SKIPPED_FINDINGS: ${{ steps.skipped.outputs.findings }}
         run: |
           set -euo pipefail
 
-          if [[ "${{ steps.context.outputs.skip_reason }}" == "" ]]; then
-            verdict="${{ steps.review.outputs.verdict }}"
-            summary="${{ steps.review.outputs.summary }}"
-            findings="${{ steps.review.outputs.findings }}"
+          if [[ -z "$SKIP_REASON" ]]; then
+            verdict="$REVIEW_VERDICT"
+            summary="$REVIEW_SUMMARY"
+            findings="$REVIEW_FINDINGS"
           else
-            verdict="${{ steps.skipped.outputs.verdict }}"
-            summary="${{ steps.skipped.outputs.summary }}"
-            findings="${{ steps.skipped.outputs.findings }}"
+            verdict="$SKIPPED_VERDICT"
+            summary="$SKIPPED_SUMMARY"
+            findings="$SKIPPED_FINDINGS"
           fi
 
-          body=$(cat <<'EOF'
-          🤖 **agent-review verdict:** __VERDICT__
+          # Build body via printf into a file so LLM-controlled bytes never hit
+          # any shell substitution context (no backticks/$()/etc. evaluated).
+          {
+            printf '🤖 **agent-review verdict:** %s\n\n' "$verdict"
+            printf '%s\n\n' "$summary"
+            printf '%s\n' "$findings"
+          } > /tmp/agent-review-body.md
 
-          __SUMMARY__
-
-          __FINDINGS__
-          EOF
-          )
-
-          body="${body/__VERDICT__/${verdict}}"
-          body="${body/__SUMMARY__/${summary}}"
-          body="${body/__FINDINGS__/${findings}}"
-
-          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
-            -f event='COMMENT' \
-            -f body="$body" >/dev/null
+          # Use jq --rawfile to inject the body without any shell substitution
+          jq -n --rawfile body /tmp/agent-review-body.md '{event:"COMMENT", body:$body}' \
+            | gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" --input - >/dev/null
 
       - name: Publish agent-review check run
+        env:
+          SKIP_REASON: ${{ steps.context.outputs.skip_reason }}
+          REVIEW_VERDICT: ${{ steps.review.outputs.verdict }}
+          REVIEW_SUMMARY: ${{ steps.review.outputs.summary }}
+          REVIEW_FINDINGS: ${{ steps.review.outputs.findings }}
+          SKIPPED_VERDICT: ${{ steps.skipped.outputs.verdict }}
+          SKIPPED_SUMMARY: ${{ steps.skipped.outputs.summary }}
+          SKIPPED_FINDINGS: ${{ steps.skipped.outputs.findings }}
         run: |
           set -euo pipefail
 
-          if [[ "${{ steps.context.outputs.skip_reason }}" == "" ]]; then
-            verdict="${{ steps.review.outputs.verdict }}"
-            summary="${{ steps.review.outputs.summary }}"
-            findings="${{ steps.review.outputs.findings }}"
+          if [[ -z "$SKIP_REASON" ]]; then
+            verdict="$REVIEW_VERDICT"
+            summary="$REVIEW_SUMMARY"
+            findings="$REVIEW_FINDINGS"
           else
-            verdict="${{ steps.skipped.outputs.verdict }}"
-            summary="${{ steps.skipped.outputs.summary }}"
-            findings="${{ steps.skipped.outputs.findings }}"
+            verdict="$SKIPPED_VERDICT"
+            summary="$SKIPPED_SUMMARY"
+            findings="$SKIPPED_FINDINGS"
           fi
 
           conclusion="neutral"
