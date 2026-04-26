@@ -1,7 +1,7 @@
 # Vendored Agent Roster
 
 Source: `~/.copilot/agents/` on the dev box (homelab-copilot vault).
-Synced: 2026-04-19T03:21:59Z
+Synced: 2026-04-26T04:05:56Z
 
 These are vendored copies of the canonical team roster. The GitHub
 Copilot coding agent reads them from this directory. To update, re-run
