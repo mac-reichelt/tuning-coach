@@ -1,17 +1,25 @@
 # Contributing
 
-Welcome! This project uses agent-driven review workflows to ensure code quality, security, and correctness. Please follow these steps when contributing:
+Thank you for your interest in contributing! This project uses agent-based review workflows to ensure code quality and domain correctness. Please follow these steps when submitting a pull request:
 
-## Getting Started
+## 1. Fork and Clone
 
-- **Fork** the repository and clone your fork.
-- **Create** a new branch for your changes.
-- **Make** your changes and commit with clear, conventional commit messages.
-- **Push** your branch and open a Pull Request (PR).
+```bash
+git clone <repo-url>
+cd <repo>
+```
 
-## Agent Routing Matrix
+## 2. Branch
 
-Before implementing any changes, identify which agents match the files you plan to touch using the routing matrix below. Read those agent files before writing code, and note them in your PR description as:
+Create a feature branch:
+
+```bash
+git checkout -b <feature-name>
+```
+
+## 3. Identify Agent Routing
+
+Before making changes, consult the agent routing matrix below to determine which agent files you need to read and reference. Note the consulted agents in your PR description as:
 
 `Consulted: <agent-name> per routing matrix.`
 
@@ -26,9 +34,9 @@ Before implementing any changes, identify which agents match the files you plan 
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-## Automated Review Workflows
+## 4. Review Workflows
 
-Four path-scoped review workflows enforce this matrix on every PR:
+Automated review workflows enforce agent routing:
 
 | Workflow | Check name | In-scope when |
 |---|---|---|
@@ -37,29 +45,37 @@ Four path-scoped review workflows enforce this matrix on every PR:
 | `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
 | `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
 
-All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
+Out-of-scope PRs post `success` so checks can be required without blocking unrelated work.
 
-## Commit Messages
+## 5. Commit and Push
 
-- Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
-- Example: `feat: add telemetry packet parser`
+Follow conventional commit messages:
 
-## PR Description
+```bash
+git commit -m "feat: <description>"
+git push origin <feature-name>
+```
 
-- Clearly describe the purpose of your changes.
-- List consulted agents per the routing matrix.
-- Reference related issues or ADRs.
+## 6. Open a Pull Request
 
-## Documentation
+- Fill out the PR template.
+- List consulted agents per routing matrix.
+- Ensure all required checks pass.
 
-- Update documentation in `/docs` and `README.md` as needed.
-- Follow the [tech-writer conventions](docs/contributing.md).
+## 7. Respond to Review
 
-## Code Review
+- Address agent and human reviewer feedback.
+- Update docs as needed.
 
-- Automated agent reviews will run on your PR.
-- Address any feedback from agent reviews or maintainers.
+## 8. Merge
 
-## License
+Once all checks pass and reviews are approved, your PR can be merged.
 
-By submitting a PR, you agree your contributions are licensed under the project's SPDX license.
+## Additional Resources
+
+- [docs/contributing.md](docs/contributing.md) — extended contributor guide
+- [docs/adr/README.md](docs/adr/README.md) — architecture decision records
+
+---
+
+For more details on agent conventions and review process, see `.github/copilot-instructions.md`.

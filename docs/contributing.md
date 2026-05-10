@@ -1,18 +1,12 @@
 # Contributor Guide
 
-This project uses agent-driven review workflows to maintain quality, security, and correctness. Follow these steps to contribute:
-
-## Workflow Overview
-
-1. **Fork** and clone the repository.
-2. **Create** a branch for your changes.
-3. **Identify** which agent(s) to consult based on the files you plan to edit (see routing matrix below).
-4. **Consult** the relevant agent files before writing code.
-5. **Note** consulted agents in your PR description: `Consulted: <agent-name> per routing matrix.`
-6. **Commit** changes with [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
-7. **Push** and open a PR.
+This project uses agent-based review workflows to ensure domain correctness and code quality. Before contributing, please read this guide and the agent routing matrix below.
 
 ## Agent Routing Matrix
+
+Before making changes, identify which agents match the files you plan to touch. Read those agent files before writing code, and note them in your PR description as:
+
+`Consulted: <agent-name> per routing matrix.`
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -38,16 +32,25 @@ Four path-scoped review workflows enforce this matrix on every PR:
 
 All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
 
-## Commit Messages
+## Contribution Steps
 
-- Use Conventional Commits for all changes.
-- Example: `fix: correct lap validity calculation`
+1. **Fork and clone** the repository.
+2. **Create a feature branch**.
+3. **Consult agent files** per routing matrix.
+4. **Make your changes**.
+5. **Commit** using conventional commit messages.
+6. **Push** and open a pull request.
+7. **List consulted agents** in your PR description.
+8. **Respond to agent and human reviews**.
+9. **Update documentation** as needed.
+10. **Merge** after all checks pass.
 
-## Documentation
+## Additional Information
 
-- Update `/docs` and `README.md` as needed.
-- Follow [tech-writer conventions](docs/contributing.md).
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — procedural onboarding
+- [docs/adr/README.md](adr/README.md) — architecture decisions
+- `.github/copilot-instructions.md` — agent conventions and review process
 
-## License
+---
 
-By submitting a PR, you agree your contributions are licensed under the project's SPDX license.
+For questions, open an issue or consult the agent files referenced above.
