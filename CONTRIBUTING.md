@@ -1,68 +1,73 @@
 # Contributing
 
-Thank you for your interest in contributing! This project uses agent-driven review workflows to ensure code quality, security, and correctness. Please read this guide before opening a pull request.
+Welcome! Follow these steps to contribute to Tuning Coach.
 
 ## Getting Started
 
-1. **Fork the repository**
-2. **Clone your fork**
+1. **Fork and clone**
    ```bash
-   git clone https://github.com/<your-username>/<repo-name>.git
-   cd <repo-name>
+   git clone https://github.com/<your-org>/tuning-coach.git
+   cd tuning-coach
    ```
-3. **Create a new branch**
+2. **Install Rust** ([rustup.rs](https://rustup.rs))
+3. **Build**
    ```bash
-   git checkout -b <feature-or-bugfix-name>
+   cargo build --release
    ```
-4. **Make your changes**
-5. **Commit with a conventional commit message**
+4. **Run tests**
    ```bash
-   git commit -m "feat: add new telemetry parser"
+   cargo test
    ```
-6. **Push and open a pull request**
 
-## Agent-Driven Review Workflows
+## Agent Routing and Review Matrix
 
-This project uses automated agent reviews for key areas:
+Before editing, check which agent(s) must review your changes. See [docs/contributing.md](docs/contributing.md) for the full routing matrix.
 
-- **Security**: `.github/workflows/security-review.yml` — triggers on changes to workflow/action files, shell scripts, or security-sensitive files.
-- **DevOps**: `.github/workflows/devops-review.yml` — triggers on CI/CD and workflow changes.
-- **QA**: `.github/workflows/qa-review.yml` — triggers when source files change without corresponding test changes.
-- **Telemetry**: `.github/workflows/telemetry-review.yml` — triggers on telemetry schema or expert agent file changes.
-- **Heuristics**: `.github/workflows/heuristics-review.yml` — triggers on tuning logic or race-engineer agent file changes.
+- **Security-sensitive files**: security-review agent
+- **CI/CD workflows**: devops-engineer + security-review agents
+- **Telemetry schema**: telemetry-expert agent
+- **Heuristics/recommendations**: race-engineer + telemetry-expert agents
+- **New crates/modules/tests**: qa-engineer agent
 
-All workflows use the skip-success pattern: out-of-scope PRs post `success` so checks can be required without blocking unrelated work.
+Automated review workflows enforce this matrix:
+- `.github/workflows/security-review.yml`
+- `.github/workflows/qa-review.yml`
+- `.github/workflows/telemetry-review.yml`
+- `.github/workflows/heuristics-review.yml`
 
-### Agent Routing Matrix
+Out-of-scope PRs are auto-approved; in-scope PRs require agent verdicts.
 
-Before implementing changes, consult the relevant agent(s) based on the files you plan to touch:
+## Making a PR
 
-| Path glob | Agent(s) to consult before editing | Rationale |
-|---|---|---|
-| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` | Packet schema is the source of truth; agent file must stay in sync with code |
-| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice + correct telemetry semantics |
-| `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
-| `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
-| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security |
-| Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
-| New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
-| `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
+1. **Create a branch**
+   ```bash
+   git checkout -b <feature-name>
+   ```
+2. **Make your changes**
+3. **Run tests**
+   ```bash
+   cargo test
+   ```
+4. **Document**
+   - Update relevant docs in `docs/` and `README.md`.
+   - If you change agent-reviewed files, note consulted agents in your PR description.
+5. **Push and open a PR**
+   ```bash
+   git push origin <feature-name>
+   ```
 
-See `.github/copilot-instructions.md` for full details.
+## PR Review Process
 
-## PR Checklist
+- Automated agent reviews run for every PR.
+- If your PR changes files in the agent routing matrix, the relevant agent(s) will review.
+- Address any agent feedback before merging.
 
-- [ ] Conventional commit message
-- [ ] Consulted relevant agent(s) per routing matrix
-- [ ] Added/updated tests for new public functions
-- [ ] Updated documentation if needed
+## Coding Standards
 
-## Documentation
-
-- [Getting Started](docs/getting-started.md)
-- [API Reference](docs/reference/api.md)
-- [Contributing](docs/contributing.md)
+- Use active voice and present tense in docs.
+- Add or update tests for new public functions/modules.
+- Link new concepts to their definitions.
 
 ## License
 
-SPDX identifier — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
