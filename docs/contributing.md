@@ -1,14 +1,12 @@
 # Contributing
 
-Welcome! This project uses a multi-agent review system to ensure code quality, security, and correctness. Before you start, please read this guide and the [CONTRIBUTING.md](../CONTRIBUTING.md) for procedural details.
+Welcome! This project uses agent-driven review workflows to ensure code quality, security, and correctness. Before you start, please read this guide and follow the agent routing matrix below.
 
 ## Agent Routing Matrix
 
 Before implementing any changes, identify which agents match the files you plan to touch using the routing matrix below. Read those agent files before writing code, and note them in your PR description as:
 
-```
-Consulted: <agent-name> per routing matrix
-```
+`Consulted: <agent-name> per routing matrix`
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -21,7 +19,7 @@ Consulted: <agent-name> per routing matrix
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-## Automated Agent Review Workflows
+## Automated Review Workflows
 
 Four path-scoped review workflows enforce this matrix on every PR:
 
@@ -34,22 +32,23 @@ Four path-scoped review workflows enforce this matrix on every PR:
 
 All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
 
-## PR Description Requirements
+## How to Contribute
 
-- List which agent(s) you consulted per the routing matrix.
-- Summarize the changes and affected areas.
-- If your PR triggers an agent review workflow, address any findings before merge.
+1. **Identify affected agents:** Use the routing matrix above to determine which agent(s) you need to consult based on the files you plan to change.
+2. **Read agent files:** Review the relevant agent files in `.github/agents/` before making changes.
+3. **Document agent consultation:** In your PR description, note which agents you consulted, e.g., `Consulted: race-engineer per routing matrix`.
+4. **Follow review workflow:** Your PR will trigger the appropriate automated review workflows. Address any feedback from agent reviews.
+5. **Add or update tests:** If you change source files under `sidecar/src/` or `overlay/`, ensure you add or update corresponding test files. Otherwise, the QA review workflow may request changes.
+6. **Submit your PR:** Follow the [CONTRIBUTING.md](../CONTRIBUTING.md) for procedural details.
 
 ## Additional Guidelines
 
-- Follow the [tech-writer conventions](../tech-writer.agent.md) for documentation changes.
-- For architectural decisions, draft ADRs in `docs/adr/` and consult the `architect` agent.
-- For test coverage, ensure new public functions/modules have corresponding tests; otherwise, the `qa-review` workflow will request changes.
+- **Architecture Decisions:** New ADRs go in `docs/adr/` and require architect review.
+- **Security:** Any changes involving authentication, secrets, or cryptography require security review.
+- **CI/CD:** Changes to workflows or actions require devops and security review.
+- **Testing:** All new public functions or modules must have corresponding tests.
 
-## Links
-
-- [Getting Started](getting-started.md)
-- [API Reference](reference/api.md)
-- [Architecture Decisions](adr/README.md)
-
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for procedural details.
+## Reference
+- [Agent files](../.github/agents/)
+- [Architecture Decision Records](adr/)
+- [README](../README.md)
