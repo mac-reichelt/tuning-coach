@@ -4,19 +4,19 @@ Thank you for your interest in contributing! This project uses agent-driven revi
 
 ## Getting Started
 
-1. **Fork the repository**
-2. **Clone your fork**
-3. **Create a new branch** for your changes
-
-```bash
-git clone <your-fork-url>
-cd <repo>
-git checkout -b <feature-branch>
-```
+1. **Fork and clone the repository.**
+2. **Create a new branch** for your changes:
+   ```bash
+   git checkout -b my-feature
+   ```
+3. **Make your changes.**
+4. **Run tests** and verify your changes locally.
 
 ## Agent Routing Matrix
 
-Before making changes, consult the relevant agent files based on the files you plan to edit. The routing matrix below shows which agents to consult:
+Before implementing any changes, identify which agents match the files you plan to touch using the routing matrix below. Read those agent files before writing code, and note them in your PR description as:
+
+`Consulted: <agent-name> per routing matrix.`
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -24,20 +24,14 @@ Before making changes, consult the relevant agent files based on the files you p
 | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice + correct telemetry semantics |
 | `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
 | `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
-| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security |
+| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security (covered by devops-review.yml and security-review.yml) |
 | Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-When submitting your PR, note the consulted agents in your PR description:
+## Automated Agent Review Workflows
 
-```
-Consulted: <agent-name> per routing matrix
-```
-
-## Automated Review Workflows
-
-The following agent-driven review workflows run automatically on every PR:
+The following path-scoped review workflows enforce the agent routing matrix on every PR:
 
 | Workflow | Check name | In-scope when |
 |---|---|---|
@@ -46,21 +40,26 @@ The following agent-driven review workflows run automatically on every PR:
 | `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
 | `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
 
-Out-of-scope PRs post `success` so checks can be required in branch protection without blocking unrelated work.
+All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
 
-## Making Changes
+## PR Checklist
 
-- **Follow the agent conventions** in the relevant agent files.
-- **Add or update tests** for any new public functions or modules.
-- **Document new features** in the appropriate docs files.
+- [ ] Consulted relevant agent(s) per routing matrix
+- [ ] Added/updated tests for new public functions/modules
+- [ ] Updated documentation as needed
+- [ ] PR description includes consulted agent(s)
 
 ## Submitting a Pull Request
 
-1. **Push your branch**
-2. **Open a pull request**
-3. **Fill out the PR template**
-4. **Note consulted agents**
-5. **Wait for agent-driven review checks** to complete
+1. **Push your branch** and open a pull request.
+2. **Fill out the PR template** and list consulted agents.
+3. **Wait for agent review checks** to complete. Address any feedback from agent reviewers.
+4. **Respond to comments** and update your PR as needed.
+
+## Additional Resources
+
+- [docs/contributing.md](docs/contributing.md) — extended contributor guide
+- [docs/adr/](docs/adr/) — architecture decision records
 
 ## License
 
