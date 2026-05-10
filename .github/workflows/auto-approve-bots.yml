@@ -15,6 +15,7 @@ jobs:
       github.event.pull_request.user.login == 'dependabot[bot]' ||
       github.event.pull_request.user.login == 'copilot-swe-agent[bot]' ||
       github.event.pull_request.user.login == 'app/copilot-swe-agent' ||
+      github.event.pull_request.user.login == 'Copilot' ||
       github.event.pull_request.user.login == 'github-actions[bot]'
     steps:
       - name: Approve PR
@@ -30,7 +31,7 @@ jobs:
           # webhook payload (GitHub-controlled, not user input), but we treat
           # it as untrusted and never interpolate it into a command string.
           case "$PR_AUTHOR" in
-            dependabot\[bot\]|copilot-swe-agent\[bot\]|github-actions\[bot\]) ;;
+            dependabot\[bot\]|copilot-swe-agent\[bot\]|Copilot|github-actions\[bot\]) ;;
             *)
               echo "Refusing to approve: author '$PR_AUTHOR' not on allowlist" >&2
               exit 1

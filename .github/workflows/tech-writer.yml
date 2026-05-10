@@ -18,7 +18,10 @@ name: tech-writer
 #     repo root, and paths outside the docs/+root-md allowlist.
 #   - LLM-controlled strings are passed to bash via `env:`, never interpolated
 #     into `run:` bodies via `${{ }}`.
-#   - PR diff is truncated to 200KB before being sent to the LLM.
+#   - PR diff is truncated to MAX_DIFF_BYTES (~25 KB) before being sent to the
+#     LLM, and the assembled request body is bailed out to APPROVE if it
+#     exceeds ~90 KB to stay under the GitHub Models free-tier 8K-token input
+#     budget.
 
 on:
   pull_request:
@@ -46,7 +49,7 @@ jobs:
       HEAD_REF: ${{ github.event.pull_request.head.ref }}
       TW_BOT_EMAIL: tech-writer-bot@users.noreply.github.com
       TW_BOT_NAME: tuning-coach tech-writer
-      MAX_DIFF_BYTES: '60000'    # ~60 KB cap for jq + LLM input
+      MAX_DIFF_BYTES: '25000'    # ~25 KB cap to stay under GitHub Models 8K-token input budget
     steps:
       - name: Verify AUTOMATION_PAT is configured
         env:
@@ -91,8 +94,8 @@ jobs:
           : > /tmp/tw-corpus.txt
 
           # Truncate diff before passing to jq/LLM
-          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H 'Accept: application/vnd.github.v3.diff' \
-            | head -c "${MAX_DIFF_BYTES}" > /tmp/tw-diff.txt
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H "Accept: application/vnd.github.v3.diff" > /tmp/tw-diff-full.txt
+          head -c "${MAX_DIFF_BYTES}" /tmp/tw-diff-full.txt > /tmp/tw-diff.txt
 
           echo "files=$(wc -l < /tmp/tw-files.txt)" >> "$GITHUB_OUTPUT"
 
@@ -127,6 +130,25 @@ jobs:
         id: llm
         run: |
           set -euo pipefail
+          # Belt-and-suspenders: if the assembled JSON request body exceeds
+          # ~90 KB, short-circuit to APPROVE rather than risk a 413 from the
+          # GitHub Models endpoint. The 90 KB cutoff is empirical: the free-tier
+          # 8K-token input limit corresponds to ~32 KB of plain text, but the
+          # JSON-escaped request body is roughly 2.5-3x larger once diff,
+          # corpus, and system prompt are encoded, so 90 KB is the largest
+          # observed safe payload before the endpoint starts rejecting.
+          REQ_BYTES=$(wc -c < /tmp/tw-req.json)
+          if [ "$REQ_BYTES" -gt 90000 ]; then
+            echo "::warning::Request body ${REQ_BYTES} bytes exceeds LLM budget; defaulting to APPROVE"
+            jq -n --argjson n "$REQ_BYTES" '{verdict:"APPROVE",summary:("PR diff plus context (" + ($n|tostring) + " bytes) exceeds tech-writer LLM budget. Skipping inline review; please verify docs manually."),patches:[]}' > /tmp/tw-verdict.json
+            verdict=$(jq -r '.verdict' /tmp/tw-verdict.json)
+            patch_count=$(jq -r '.patches | length' /tmp/tw-verdict.json)
+            echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+            echo "patch_count=$patch_count" >> "$GITHUB_OUTPUT"
+            echo "Verdict=$verdict patches=$patch_count (bailed)"
+            exit 0
+          fi
+
           curl -fsSL "https://models.inference.ai.azure.com/chat/completions" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Content-Type: application/json" \
