@@ -66,7 +66,7 @@ the prerequisite upgrade (race transmission, race diff, adjustable suspension, e
 ```
 
 ### Sidecar responsibilities
-- UDP listener on configurable port, parses Forza "Dash" packet (331 bytes)
+- UDP listener on configurable port, parses Forza telemetry packets: primary 331-byte FM 2023 Dash, plus legacy 311-byte Dash and 232-byte Sled-only variants
 - Session state machine: idle → in-session → between-laps → post-session
 - **Lap-validity detection:** dirty laps (off-track wheels, contact spikes,
   unrealistic grip jumps), pit-stop entry/exit, lap reset/rewind detection
