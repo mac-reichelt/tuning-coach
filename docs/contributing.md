@@ -1,6 +1,6 @@
 # Contributing
 
-Welcome! This project uses agent-driven review workflows to ensure every change is correct, secure, and well-tested. Before you start, please read this guide and follow the agent routing matrix below.
+Welcome! This project uses agent-driven review and automated CI checks to ensure code quality and domain correctness. Before you start, please read this guide and the [CONTRIBUTING.md](../CONTRIBUTING.md) file in the repo root.
 
 ## Agent Routing Matrix
 
@@ -34,47 +34,25 @@ Four path-scoped review workflows enforce this matrix on every PR:
 
 All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
 
-## How to Contribute
+## PR Description Format
 
-1. **Fork and clone** the repo.
-2. **Create a branch** for your change.
-3. **Consult the agent(s)** per the routing matrix above.
-4. **Make your changes.**
-5. **Add or update tests** for any new public functions or modules.
-6. **Document your change** if it affects user-facing behavior.
-7. **Open a PR**. In your PR description, list the consulted agent(s) and affected files.
-8. **Wait for agent reviews**. The automated workflows will post review verdicts as PR comments and check runs.
-9. **Address feedback** from agents and maintainers.
-
-## PR Description Template
-
-Include this in your PR description:
+Your PR description must include which agent files you consulted, e.g.:
 
 ```
-Consulted: <agent-name> per routing matrix
-Affected files: <list>
-Summary: <what/why>
+Consulted: race-engineer.agent.md, telemetry-expert.agent.md per routing matrix
 ```
 
-## Testing
+## Procedural Steps
 
-- All new public functions must have tests.
-- Overlay logic changes must have vitest coverage.
-- Sidecar changes must have cargo test coverage.
+1. **Identify affected files and agents.**
+2. **Consult agent files as per routing matrix.**
+3. **Write code and tests.**
+4. **Document changes as needed.**
+5. **Open PR with agent consultation noted.**
+6. **Automated review workflows will run and post verdicts.**
 
-## Docs
+## Additional Guidance
 
-- Update `docs/` for any user-facing changes.
-- Update ADRs for architectural decisions.
-
-## Security
-
-- Any change involving auth, secrets, or crypto must be reviewed by `security-review`.
-
-## Questions?
-
-Open an issue or ask in discussions.
-
----
-
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for the procedural checklist.
+- See [CONTRIBUTING.md](../CONTRIBUTING.md) for full onboarding steps, code style, and test requirements.
+- For architecture decisions, see [docs/adr/](adr/README.md).
+- For API reference, see [docs/reference/api.md](reference/api.md).
