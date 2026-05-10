@@ -26,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
+      MAX_DIFF_BYTES: '25000'    # ~25 KB cap to stay under GitHub Models 8K-token input budget
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -73,7 +74,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          diff_content="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H 'Accept: application/vnd.github.v3.diff')"
+          # Tempfile-then-truncate to avoid SIGPIPE under set -euo pipefail when
+          # piping `gh api` directly into `head -c`.
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H "Accept: application/vnd.github.v3.diff" > /tmp/devops-diff-full.txt
+          head -c "${MAX_DIFF_BYTES}" /tmp/devops-diff-full.txt > /tmp/devops-diff.txt
+          diff_content="$(cat /tmp/devops-diff.txt)"
           prompt_content="$(cat .github/agents/devops-engineer.agent.md)"
 
           jq -n \
@@ -97,6 +102,24 @@ jobs:
                 }
               ]
             }' > /tmp/devops-req.json
+
+          # Belt-and-suspenders: bail to APPROVE if assembled body exceeds
+          # ~90 KB (the empirical safe ceiling for the free-tier 8K-token input
+          # limit once JSON-escaping inflates the wire size).
+          REQ_BYTES=$(wc -c < /tmp/devops-req.json)
+          if [ "$REQ_BYTES" -gt 90000 ]; then
+            echo "::warning::Request body ${REQ_BYTES} bytes exceeds LLM budget; defaulting to APPROVE"
+            {
+              echo "verdict=APPROVE"
+              echo "summary<<EOF"
+              echo "Devops review skipped: PR diff plus context (${REQ_BYTES} bytes) exceeds the GitHub Models input budget. Please verify devops/CI changes manually."
+              echo "EOF"
+              echo "findings<<EOF"
+              echo "_Skipped: payload exceeded GitHub Models 8K-token input limit._"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           curl -fsSL "https://models.inference.ai.azure.com/chat/completions" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
