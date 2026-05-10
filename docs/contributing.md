@@ -1,54 +1,67 @@
-# Contributing
+# Contributor Guide
 
-Welcome! This project uses an agent-driven review process to ensure code quality, security, and correctness. Before you start, please read this guide and follow the agent routing matrix below.
+Welcome! This guide explains how to contribute code, documentation, and tests to the project.
 
-## Agent Routing Matrix
+## Workflow Overview
 
-Before implementing any changes, identify which agents match the files you plan to touch using the routing matrix below. Read those agent files before writing code, and note them in your PR description as:
+1. **Fork and branch:**
+   - Fork the repository.
+   - Create a feature branch for your changes.
 
-```
-Consulted: <agent-name> per routing matrix
-```
+2. **Write code and tests:**
+   - Follow code conventions and style.
+   - Add or update tests for all new public functions, modules, or features.
 
-| Path glob | Agent(s) to consult before editing | Rationale |
-|---|---|---|
-| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` | Packet schema is the source of truth; agent file must stay in sync with code |
-| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice + correct telemetry semantics |
-| `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
-| `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
-| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security (covered by devops-review.yml and security-review.yml) |
-| Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
-| New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
-| `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
+3. **Update documentation:**
+   - Update `README.md` and relevant files in `docs/` for any user-facing changes.
+   - Document new features, APIs, or configuration options.
 
-## Automated Review Workflows
+4. **Open a Pull Request:**
+   - Fill out the PR template.
+   - Note any agent files consulted per the routing matrix (see below).
 
-Four path-scoped review workflows enforce this matrix on every PR:
+## Agent Review Routing
 
-| Workflow | Check name | In-scope when |
-|---|---|---|
-| `.github/workflows/security-review.yml` | `security-review verdict` | Workflow/action files, shell scripts, or security-sensitive file names change |
-| `.github/workflows/qa-review.yml` | `qa-review verdict` | `sidecar/src/**` or `overlay/**` changes without accompanying test-file changes |
-| `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
-| `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
+Certain files trigger specialized agent review workflows. Before editing these files, consult the relevant agent file and note it in your PR description:
 
-All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
+| Path glob | Agent(s) to consult | Review Workflow |
+|-----------|---------------------|-----------------|
+| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` | `telemetry-review` |
+| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer`, `telemetry-expert` | `heuristics-review` |
+| `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | (manual/ADR) |
+| `docs/adr/**` (new files) | `architect` | (manual/ADR) |
+| `.github/workflows/**`, `.github/actions/**` | `devops-engineer`, `security-review` | `devops-review`, `security-review` |
+| Auth, secrets, OIDC, crypto files | `security-review` | `security-review` |
+| New crates, new public modules, new sidecar tests | `qa-engineer` | `qa-review` |
+| `overlay/**` (logic changes) | `qa-engineer` | `qa-review` |
 
-## How to Contribute
+See [copilot-instructions.md](../.github/copilot-instructions.md) for full details.
 
-1. **Fork and clone** the repository.
-2. **Identify affected files** and consult the relevant agent(s) per the routing matrix.
-3. **Read agent files** for conventions and requirements.
-4. **Make your changes** and ensure tests pass.
-5. **Document consulted agents** in your PR description.
-6. **Open a PR**. Automated review workflows will run and post verdicts.
-7. **Address review feedback** from agents and maintainers.
+## Agent Review Workflows
 
-## Additional Guidelines
+Automated agent reviews run on every PR:
 
-- **Active voice, present tense** in docs and code comments.
-- **Show, don't tell**: use real output and examples.
-- **Link everything**: cross-reference concepts and files.
-- **No marketing fluff**: focus on measurable facts.
+- **security-review:** Security-sensitive changes
+- **devops-review:** CI/CD and workflow changes
+- **telemetry-review:** Telemetry schema and parsing
+- **heuristics-review:** Tuning logic and recommendations
+- **qa-review:** Source changes without test changes
 
-For more details, see [README.md](../README.md) and [docs/adr/README.md](adr/README.md).
+Out-of-scope PRs are auto-approved. Address agent feedback before requesting human review.
+
+## Test Coverage Discipline
+
+- All new or changed public interfaces must have tests.
+- If you change source files under `sidecar/src/` or `overlay/` without updating or adding tests, the `qa-review` check will flag your PR.
+
+## Architecture Decisions
+
+- Schema changes or new ADRs require review by the `architect` agent.
+
+## Security
+
+- Any file involving auth, secrets, OIDC, or crypto triggers the `security-review` check.
+
+## License
+
+Contributions are accepted under the project's license. See [LICENSE](../LICENSE).

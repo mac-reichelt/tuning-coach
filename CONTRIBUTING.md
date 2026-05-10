@@ -1,47 +1,46 @@
 # Contributing
 
-This project uses agent-driven reviews and automated workflows to maintain quality and security. Please follow these steps when contributing:
+Thank you for your interest in improving this project!
 
-## Agent Routing Matrix
+## How to Contribute
 
-Before making changes, consult the agent(s) responsible for the files you plan to edit. Reference the matrix below and note consulted agents in your PR description:
+- **Fork** the repository and create a feature branch.
+- **Write code** and tests. Follow the [coding conventions](docs/contributing.md).
+- **Document** any new features or changes. Update relevant files in `docs/` and `README.md`.
+- **Open a Pull Request**. Fill out the PR template completely.
 
-```
-Consulted: <agent-name> per routing matrix
-```
+## Agent Review Workflows
 
-| Path glob | Agent(s) to consult before editing | Rationale |
-|---|---|---|
-| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` | Packet schema is the source of truth; agent file must stay in sync with code |
-| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice + correct telemetry semantics |
-| `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
-| `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
-| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security (covered by devops-review.yml and security-review.yml) |
-| Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
-| New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
-| `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
+This project uses agent-driven review checks for critical areas. When you change files matching certain paths, your PR will trigger specialized review workflows:
 
-## Automated Review Workflows
+| Workflow | Scope | Agent File | Purpose |
+|----------|-------|------------|---------|
+| `security-review` | Security-sensitive files, workflows, actions | `.github/agents/security-review.agent.md` | Security correctness |
+| `devops-review` | CI/CD workflows, actions | `.github/agents/devops-engineer.agent.md` | DevOps correctness |
+| `telemetry-review` | Telemetry schema, packet parsing | `.github/agents/telemetry-expert.agent.md` | Telemetry schema correctness |
+| `heuristics-review` | Tuning logic, heuristics, recommendations | `.github/agents/race-engineer.agent.md` | Engineering correctness |
+| `qa-review` | Source changes without test changes | `.github/agents/qa-engineer.agent.md` | Test coverage discipline |
 
-The following workflows enforce agent review on every PR:
+**Before editing files in these areas:**
+- Consult the relevant agent file (see the routing matrix in [copilot-instructions.md](.github/copilot-instructions.md)).
+- Note the consulted agent(s) in your PR description: `Consulted: <agent-name> per routing matrix`.
 
-| Workflow | Check name | In-scope when |
-|---|---|---|
-| `.github/workflows/security-review.yml` | `security-review verdict` | Workflow/action files, shell scripts, or security-sensitive file names change |
-| `.github/workflows/qa-review.yml` | `qa-review verdict` | `sidecar/src/**` or `overlay/**` changes without accompanying test-file changes |
-| `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
-| `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
+## Procedural Requirements
 
-Out-of-scope PRs post `success` so required checks do not block unrelated work.
+- **Tests:** All new public functions, modules, or features must have accompanying tests. If you change source files under `sidecar/src/` or `overlay/` without updating or adding tests, the `qa-review` check will flag your PR.
+- **Architecture Decisions:** Schema changes or new ADRs require review by the `architect` agent.
+- **Security:** Any file involving auth, secrets, OIDC, or crypto triggers the `security-review` check.
 
-## Contribution Steps
+## Review Process
 
-1. **Fork and clone** the repository.
-2. **Identify affected files** and consult the relevant agent(s).
-3. **Read agent files** for conventions.
-4. **Make your changes** and ensure tests pass.
-5. **Document consulted agents** in your PR description.
-6. **Open a PR**. Automated review workflows will run.
-7. **Address agent and maintainer feedback**.
+- Automated agent reviews run on every PR. Out-of-scope PRs are auto-approved by the agents.
+- Address any agent feedback before requesting human review.
 
-For more details, see [docs/contributing.md](docs/contributing.md).
+## Docs
+
+- Update `docs/contributing.md` for any changes to the contribution process.
+- See [copilot-instructions.md](.github/copilot-instructions.md) for agent routing details.
+
+## License
+
+Contributions are accepted under the project's license. See [LICENSE](LICENSE).
