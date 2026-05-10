@@ -68,18 +68,19 @@ jobs:
       - name: Run devops-engineer agent (GitHub Models)
         if: steps.ctx.outputs.skip_reason == ''
         id: review
+        env:
+          CHANGED_FILES: ${{ steps.ctx.outputs.changed_files }}
         run: |
           set -euo pipefail
 
           diff_content="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H 'Accept: application/vnd.github.v3.diff')"
           prompt_content="$(cat .github/agents/devops-engineer.agent.md)"
-          changed_files="${{ steps.ctx.outputs.changed_files }}"
 
           jq -n \
             --arg pr "$PR_NUMBER" \
             --arg base "$BASE_SHA" \
             --arg head "$HEAD_SHA" \
-            --arg files "$changed_files" \
+            --arg files "$CHANGED_FILES" \
             --arg diff "$diff_content" \
             --arg prompt "$prompt_content" \
             '{
