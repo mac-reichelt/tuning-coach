@@ -1,77 +1,70 @@
-# Contributing
+# Contributor Guide
 
-Welcome! This project uses agent-driven review workflows to ensure code quality, security, and correctness. Please read this guide before submitting a pull request.
+Welcome! This project uses a multi-agent review process and automated checks to ensure high-quality, maintainable code. This guide explains how to contribute effectively.
 
-## Getting Started
+## Agent Routing Matrix
 
-- **Clone the repo:**
-  ```bash
-  git clone <repo-url>
-  cd <repo-name>
-  ```
-- **Install dependencies:** Follow [docs/getting-started.md](getting-started.md) for setup instructions.
+Before you start coding, determine which agent(s) are responsible for reviewing your changes. The agent routing matrix below shows which files are reviewed by which agents. **You must consult the relevant agent file(s) in `.github/agents/` before making changes.**
 
-## Branching & PRs
-
-- **Branch from main:**
-  ```bash
-  git checkout -b <feature-branch>
-  ```
-- **Commit messages:** Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
-- **Pull requests:** Fill out the PR template. Include which agent files you consulted if your changes match the routing matrix below.
-
-## Agent Review Workflows
-
-This project enforces four automated agent-driven review workflows for every PR:
-
-| Workflow | Scope | Agent | Verdicts |
-|---|---|---|---|
-| `security-review` | Workflow/action files, shell scripts, or files with security-sensitive names (auth, crypto, secret, oidc, token) | `security-review` | APPROVE, REQUEST_CHANGES, COMMENT |
-| `qa-review` | Source files under `sidecar/src/` or `overlay/` without accompanying test changes | `qa-engineer` | APPROVE, REQUEST_CHANGES, COMMENT |
-| `telemetry-review` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `.github/agents/telemetry-expert.agent.md` | `telemetry-expert` | APPROVE, REQUEST_CHANGES, COMMENT |
-| `heuristics-review` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `.github/agents/race-engineer.agent.md` | `race-engineer` | APPROVE, REQUEST_CHANGES, COMMENT |
-
-All four workflows use a skip-success pattern: if your PR is out of scope for a workflow, it posts a passing check so branch protection is not blocked.
-
-### Agent Routing Matrix
-
-Before making changes, consult the agent(s) listed for the files you plan to edit:
-
-| Path glob | Agent(s) to consult | Rationale |
+| Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
 | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` | Packet schema is the source of truth; agent file must stay in sync with code |
 | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice + correct telemetry semantics |
 | `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
 | `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
-| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security |
+| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security (covered by devops-review.yml and security-review.yml) |
 | Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-**Note:** Mention consulted agents in your PR description as:
-`Consulted: <agent-name> per routing matrix`.
+**In your PR description, include:**
 
-## Code Style & Tests
+```
+Consulted: <agent-name> per routing matrix
+```
 
-- **Rust:** Follow [rustfmt](https://github.com/rust-lang/rustfmt) and [clippy](https://github.com/rust-lang/rust-clippy).
-- **JS/TS:** Use [Prettier](https://prettier.io/) and [ESLint](https://eslint.org/).
-- **Tests:** Add or update tests for all new public functions, modules, or features. PRs that change source without tests will trigger a QA review.
+## Automated Review Workflows
 
-## Docs
+Every pull request is checked by four automated workflows that enforce the agent routing matrix:
 
-- Update [README.md](../README.md) and [docs/](./) as needed.
-- For architecture decisions, add or update files in [docs/adr/](adr/).
+| Workflow | Check name | In-scope when |
+|---|---|---|
+| `.github/workflows/security-review.yml` | `security-review verdict` | Workflow/action files, shell scripts, or security-sensitive file names change |
+| `.github/workflows/qa-review.yml` | `qa-review verdict` | `sidecar/src/**` or `overlay/**` changes without accompanying test-file changes |
+| `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
+| `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
 
-## Security
+If your PR is out of scope for a workflow, it will post a passing check (skip-success) and not block your merge.
 
-- Never commit secrets or credentials.
-- Review [SECURITY.md](../SECURITY.md) for responsible disclosure.
+## How to Contribute
 
-## Release Process
+1. **Fork and clone** the repository.
+2. **Create a feature branch**:
+   ```bash
+   git checkout -b my-feature
+   ```
+3. **Identify agent(s)** for your changes using the routing matrix above.
+4. **Consult the agent file(s)** in `.github/agents/` for conventions and requirements.
+5. **Make your changes** and commit with a [conventional commit message](https://www.conventionalcommits.org/en/v1.0.0/).
+6. **Push your branch**:
+   ```bash
+   git push origin my-feature
+   ```
+7. **Open a pull request**. In the PR description, note which agent(s) you consulted.
+8. **Ensure all required checks pass** before merging.
 
-- Releases are managed by [release-please](https://github.com/google-github-actions/release-please-action).
-- See [CHANGELOG.md](../CHANGELOG.md) for release notes.
+## Code Style & Documentation
+
+- Use **active voice** and **present tense**.
+- Write instructions in **second person**.
+- Prefer **code-first** explanations.
+- Use **headings, bullets, and tables** for clarity.
+- **Link** to definitions and related docs.
+- Avoid marketing language.
+- Indicate minimum compatible version where relevant.
+
+See [README.md](../README.md) and [docs/](./) for more style guidance.
 
 ## Questions?
 
-- Open an issue or ask in discussions.
+Open an issue or start a discussion if you need help.

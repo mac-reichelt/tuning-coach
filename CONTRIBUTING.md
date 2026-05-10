@@ -1,77 +1,72 @@
 # Contributing
 
-Welcome! This project uses agent-driven review workflows to ensure code quality, security, and correctness. Please read this guide before submitting a pull request.
+Thank you for your interest in contributing! This project uses a multi-agent review process to ensure code quality, correctness, and security. Please read this guide carefully before opening a pull request.
 
 ## Getting Started
 
-- **Clone the repo:**
-  ```bash
-  git clone <repo-url>
-  cd <repo-name>
-  ```
-- **Install dependencies:** Follow [docs/getting-started.md](docs/getting-started.md) for setup instructions.
+1. **Fork the repository** and clone your fork.
+2. **Create a new branch** for your change:
+   ```bash
+   git checkout -b my-feature
+   ```
+3. **Make your changes** and commit them with [conventional commit messages](https://www.conventionalcommits.org/en/v1.0.0/).
+4. **Push your branch** to your fork:
+   ```bash
+   git push origin my-feature
+   ```
+5. **Open a pull request** against the main repository.
 
-## Branching & PRs
+## Agent Routing Matrix
 
-- **Branch from main:**
-  ```bash
-  git checkout -b <feature-branch>
-  ```
-- **Commit messages:** Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
-- **Pull requests:** Fill out the PR template. Include which agent files you consulted if your changes match the routing matrix below.
+Before implementing any changes, you must identify which agents are responsible for reviewing the files you plan to touch. Use the routing matrix below to determine which agent(s) to consult. Read the relevant agent files in `.github/agents/` before writing code, and note them in your PR description as:
 
-## Agent Review Workflows
+```
+Consulted: <agent-name> per routing matrix
+```
 
-This project enforces four automated agent-driven review workflows for every PR:
-
-| Workflow | Scope | Agent | Verdicts |
-|---|---|---|---|
-| `security-review` | Workflow/action files, shell scripts, or files with security-sensitive names (auth, crypto, secret, oidc, token) | `security-review` | APPROVE, REQUEST_CHANGES, COMMENT |
-| `qa-review` | Source files under `sidecar/src/` or `overlay/` without accompanying test changes | `qa-engineer` | APPROVE, REQUEST_CHANGES, COMMENT |
-| `telemetry-review` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `.github/agents/telemetry-expert.agent.md` | `telemetry-expert` | APPROVE, REQUEST_CHANGES, COMMENT |
-| `heuristics-review` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `.github/agents/race-engineer.agent.md` | `race-engineer` | APPROVE, REQUEST_CHANGES, COMMENT |
-
-All four workflows use a skip-success pattern: if your PR is out of scope for a workflow, it posts a passing check so branch protection is not blocked.
-
-### Agent Routing Matrix
-
-Before making changes, consult the agent(s) listed for the files you plan to edit:
-
-| Path glob | Agent(s) to consult | Rationale |
+| Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
 | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` | Packet schema is the source of truth; agent file must stay in sync with code |
 | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice + correct telemetry semantics |
 | `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
 | `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
-| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security |
+| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security (covered by devops-review.yml and security-review.yml) |
 | Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-**Note:** Mention consulted agents in your PR description as:
-`Consulted: <agent-name> per routing matrix`.
+## Automated Review Workflows
 
-## Code Style & Tests
+Four path-scoped review workflows enforce this matrix on every PR:
 
-- **Rust:** Follow [rustfmt](https://github.com/rust-lang/rustfmt) and [clippy](https://github.com/rust-lang/rust-clippy).
-- **JS/TS:** Use [Prettier](https://prettier.io/) and [ESLint](https://eslint.org/).
-- **Tests:** Add or update tests for all new public functions, modules, or features. PRs that change source without tests will trigger a QA review.
+| Workflow | Check name | In-scope when |
+|---|---|---|
+| `.github/workflows/security-review.yml` | `security-review verdict` | Workflow/action files, shell scripts, or security-sensitive file names change |
+| `.github/workflows/qa-review.yml` | `qa-review verdict` | `sidecar/src/**` or `overlay/**` changes without accompanying test-file changes |
+| `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
+| `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
 
-## Docs
+All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
 
-- Update [README.md](README.md) and [docs/](docs/) as needed.
-- For architecture decisions, add or update files in [docs/adr/](docs/adr/).
+## Code Style & Documentation
 
-## Security
+- **Active voice, present tense.**
+- **Second person for instructions.**
+- **Code-first.** Show the command/snippet; explain in 1–2 lines after.
+- **Scannable.** Headings, bullets, tables.
+- **Link everything.**
+- **No marketing fluff.**
+- **Versioned.**
 
-- Never commit secrets or credentials.
-- Review [SECURITY.md](SECURITY.md) for responsible disclosure.
+See [docs/contributing.md](docs/contributing.md) for more details.
 
-## Release Process
+## Pull Request Checklist
 
-- Releases are managed by [release-please](https://github.com/google-github-actions/release-please-action).
-- See [CHANGELOG.md](CHANGELOG.md) for release notes.
+- [ ] I have identified and consulted the correct agent(s) per the routing matrix.
+- [ ] I have included a note in my PR description: `Consulted: <agent-name> per routing matrix`.
+- [ ] I have run all tests and linters locally.
+- [ ] I have updated documentation as needed.
 
 ## Questions?
 
-- Open an issue or ask in discussions.
+Open an issue or ask in Discussions.
