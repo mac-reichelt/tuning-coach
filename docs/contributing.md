@@ -1,55 +1,55 @@
 # Contributing Guide
 
-Welcome! This project uses agent-driven review workflows to ensure quality and correctness. Please read this guide before submitting changes.
+This guide covers how to contribute to Tuning Coach, including agent routing and automated review workflows.
 
 ## Agent Routing Matrix
 
-Before you start, identify which agents match the files you plan to touch. Consult the relevant agent(s) and note them in your PR description.
+Before making changes, consult the [agent routing matrix](../.github/copilot-instructions.md#agent-routing) to determine which agent(s) must review your changes. The matrix maps file paths to responsible agents:
 
-| Path glob | Agent(s) to consult before editing | Rationale |
+| Path glob | Agent(s) to consult | Rationale |
 |---|---|---|
-| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` | Packet schema is the source of truth; agent file must stay in sync with code |
-| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice + correct telemetry semantics |
+| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` | Packet schema must stay in sync with code |
+| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice |
 | `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
-| `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
+| `docs/adr/**` (new files) | `architect` | New ADRs need review |
 | `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security |
-| Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
+| Any file with auth, secrets, OIDC, crypto | `security-review` | Security review required |
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
-| `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
+| `overlay/**` (logic changes) | `qa-engineer` | Overlay test discipline |
 
 ## Automated Review Workflows
 
-The following workflows enforce agent review checks:
+Four automated review workflows enforce the agent routing matrix:
 
-- `.github/workflows/security-review.yml` — Security-sensitive changes
-- `.github/workflows/qa-review.yml` — Source changes without test updates
-- `.github/workflows/telemetry-review.yml` — Telemetry schema/logic changes
-- `.github/workflows/heuristics-review.yml` — Heuristics/tuning logic changes
-- `.github/workflows/devops-review.yml` — CI/CD and workflow changes
-- `.github/workflows/agent-review.yml` — General agent review
+| Workflow | Scope |
+|---|---|
+| `security-review` | Security-sensitive files and workflows |
+| `qa-review` | Source changes without accompanying tests |
+| `telemetry-review` | Telemetry schema and expert logic |
+| `heuristics-review` | Tuning logic and race engineering heuristics |
 
-Each workflow posts a verdict and must pass for your PR to merge.
+These checks run on every PR and must pass for merge. Out-of-scope PRs are auto-approved.
 
-## How to Contribute
+## PR Process
 
-1. Fork and clone the repository
-2. Create a new branch
-3. Make your changes
-4. Update documentation as needed
-5. Push your branch
-6. Open a Pull Request
-   - Fill out the PR template
-   - Note which agents you consulted
-   - Ensure all required checks pass
+1. **Consult agent routing matrix** before editing.
+2. **Note consulted agents** in your PR description.
+3. **Open a PR** and fill out the template.
+4. **Wait for agent review checks** to complete.
 
-## Style Guide
+## Testing
 
-- Use active voice and present tense
-- Write instructions in second person
-- Show real output and code snippets
-- Use headings, bullets, and tables for clarity
-- Link to definitions and reference docs
+- Add tests for new public functions/modules.
+- Run all tests before opening a PR:
+  ```bash
+  cargo test
+  npm test
+  ```
+
+## Docs Style
+
+- Use active voice, second person, and scannable formatting.
+- Link all new concepts to their definitions.
 
 ## License
-
-SPDX identifier: [LICENSE](../LICENSE)
+MIT — see [LICENSE](../LICENSE).
