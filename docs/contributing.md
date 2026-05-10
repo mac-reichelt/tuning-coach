@@ -1,12 +1,10 @@
-# Contributor Guide
+# Contributing Guide
 
-This project uses agent-based review workflows to ensure domain correctness and code quality. Before contributing, please read this guide and the agent routing matrix below.
+This project uses agent-based review workflows to ensure quality, security, and correctness. Follow these steps to contribute effectively:
 
 ## Agent Routing Matrix
 
-Before making changes, identify which agents match the files you plan to touch. Read those agent files before writing code, and note them in your PR description as:
-
-`Consulted: <agent-name> per routing matrix.`
+Before you start, identify which agent(s) you must consult based on the files you plan to change. Read the relevant agent files and reference them in your PR description.
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -14,14 +12,20 @@ Before making changes, identify which agents match the files you plan to touch. 
 | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice + correct telemetry semantics |
 | `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
 | `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
-| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security (covered by devops-review.yml and security-review.yml) |
+| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security |
 | Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
+**Example PR description note:**
+
+```
+Consulted: race-engineer, telemetry-expert per routing matrix
+```
+
 ## Automated Review Workflows
 
-Four path-scoped review workflows enforce this matrix on every PR:
+The following review workflows run automatically based on the files you change:
 
 | Workflow | Check name | In-scope when |
 |---|---|---|
@@ -30,27 +34,34 @@ Four path-scoped review workflows enforce this matrix on every PR:
 | `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
 | `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
 
-All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
+Out-of-scope PRs post a passing check so branch protection is not blocked.
 
-## Contribution Steps
+## Coding Standards
 
-1. **Fork and clone** the repository.
-2. **Create a feature branch**.
-3. **Consult agent files** per routing matrix.
-4. **Make your changes**.
-5. **Commit** using conventional commit messages.
-6. **Push** and open a pull request.
-7. **List consulted agents** in your PR description.
-8. **Respond to agent and human reviews**.
-9. **Update documentation** as needed.
-10. **Merge** after all checks pass.
+- Follow agent conventions for your area.
+- Write tests for new public interfaces.
+- Update documentation as needed.
 
-## Additional Information
+## Submitting a PR
 
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — procedural onboarding
+1. Fork and branch.
+2. Make your changes.
+3. Run tests and lint.
+4. Update docs if needed.
+5. Reference consulted agent(s) in your PR description.
+6. Submit your PR.
+
+## Review Process
+
+- Automated agent reviews will run.
+- Address agent and maintainer feedback.
+- Merge once all checks pass.
+
+## More Information
+
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — quickstart
 - [docs/adr/README.md](adr/README.md) — architecture decisions
-- `.github/copilot-instructions.md` — agent conventions and review process
 
----
+## License
 
-For questions, open an issue or consult the agent files referenced above.
+See [LICENSE](../LICENSE).
