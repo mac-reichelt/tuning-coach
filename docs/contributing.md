@@ -1,12 +1,14 @@
-# Contributing
+# Contributing Guide
 
-Welcome! This project uses agent-driven review workflows to ensure code quality, security, and correctness. Please follow these steps when contributing:
+This project uses agent-driven review workflows to maintain quality, correctness, and security. Follow these steps to contribute effectively.
 
 ## Agent Routing Matrix
 
-Before implementing any changes, identify which agents match the files you plan to touch using the routing matrix below. Read those agent files before writing code, and note them in your PR description as:
+Before implementing changes, identify which agents match the files you plan to touch. Consult the relevant agent files and note them in your PR description:
 
-`Consulted: <agent-name> per routing matrix`
+```
+Consulted: <agent-name> per routing matrix
+```
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -19,7 +21,7 @@ Before implementing any changes, identify which agents match the files you plan 
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-## Automated Review Workflows
+## Automated Agent Review Workflows
 
 Four path-scoped review workflows enforce this matrix on every PR:
 
@@ -30,33 +32,23 @@ Four path-scoped review workflows enforce this matrix on every PR:
 | `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
 | `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
 
-All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
+Out-of-scope PRs post a passing check so these can be required in branch protection without blocking unrelated work.
 
-## PR Description Requirements
+## PR Checklist
 
-- List which agent files you consulted, per the routing matrix.
-- If you add or change logic in a path covered by an agent, summarize how your changes align with the agent's conventions.
-- If you add new public functions or modules, ensure you add or update tests. Otherwise, the QA review will request changes.
+- [ ] Consulted agent files per routing matrix
+- [ ] Added or updated tests for new public functions/modules
+- [ ] Documented new features or API changes in `/docs` and `README.md`
+- [ ] Filled out PR template, listing consulted agents
 
-## Procedural Steps
+## Agent Review Outcomes
 
-1. **Fork and clone** the repository.
-2. **Create a branch** for your changes.
-3. **Consult agent files** as required by the routing matrix.
-4. **Make your changes** and add tests as needed.
-5. **Commit** with a conventional commit message.
-6. **Push** your branch and open a PR.
-7. **Fill out the PR template** and note consulted agents.
-8. **Address agent review feedback** if any checks request changes.
+Agent reviews post a verdict (`APPROVE`, `REQUEST_CHANGES`, or `COMMENT`) and findings as a PR review and check-run. Address any `REQUEST_CHANGES` before merging.
 
-## Additional Guidance
+## Additional Guidelines
 
-- See [README.md](../README.md) for project overview.
-- See [docs/adr/](adr/README.md) for architecture decisions.
-- See [docs/reference/api.md](reference/api.md) for API details.
+- Use active voice and present tense in documentation.
+- Link all new concepts to their definitions.
+- Do not document features that do not exist yet.
 
-## Anti-Patterns
-
-- Do not document features that don't exist yet.
-- Do not skip agent consultation for in-scope files.
-- Do not merge source changes without tests.
+For more information, see [CONTRIBUTING.md](../CONTRIBUTING.md).
