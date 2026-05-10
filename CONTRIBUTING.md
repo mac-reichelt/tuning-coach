@@ -1,43 +1,47 @@
 # Contributing
 
-Thank you for your interest in contributing! This project uses agent-driven review workflows to ensure code quality, security, and correctness. Please follow these steps when submitting a pull request:
+This project uses agent-driven reviews and automated workflows to maintain quality and security. Please follow these steps when contributing:
 
-## 1. Identify Agent Routing
+## Agent Routing Matrix
 
-Before making changes, consult the agent routing matrix (see [docs/contributing.md](docs/contributing.md)) to determine which agent files you need to read based on the files you plan to edit. Note the consulted agents in your PR description as:
+Before making changes, consult the agent(s) responsible for the files you plan to edit. Reference the matrix below and note consulted agents in your PR description:
 
 ```
 Consulted: <agent-name> per routing matrix
 ```
 
-## 2. Review Workflows
+| Path glob | Agent(s) to consult before editing | Rationale |
+|---|---|---|
+| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` | Packet schema is the source of truth; agent file must stay in sync with code |
+| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice + correct telemetry semantics |
+| `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
+| `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
+| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security (covered by devops-review.yml and security-review.yml) |
+| Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
+| New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
+| `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-Your PR will be checked by several automated agent review workflows:
+## Automated Review Workflows
 
-- **security-review**: Runs when workflow/action files, shell scripts, or security-sensitive files change.
-- **qa-review**: Runs when source files under `sidecar/src/` or `overlay/` change without accompanying test file changes.
-- **telemetry-review**: Runs when `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` change.
-- **heuristics-review**: Runs when `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` change.
+The following workflows enforce agent review on every PR:
 
-Out-of-scope PRs post a passing check so these can be required without blocking unrelated work.
+| Workflow | Check name | In-scope when |
+|---|---|---|
+| `.github/workflows/security-review.yml` | `security-review verdict` | Workflow/action files, shell scripts, or security-sensitive file names change |
+| `.github/workflows/qa-review.yml` | `qa-review verdict` | `sidecar/src/**` or `overlay/**` changes without accompanying test-file changes |
+| `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
+| `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
 
-## 3. Procedural Steps
+Out-of-scope PRs post `success` so required checks do not block unrelated work.
 
-- **Fork and clone** the repository.
-- **Create a branch** for your changes.
-- **Make your changes**, consulting agent files as required.
-- **Add or update tests** for any new public functions or modules.
-- **Document** any new features or API changes in `/docs` and `README.md`.
-- **Open a pull request** and fill out the PR template, listing consulted agents.
+## Contribution Steps
 
-## 4. Agent Review Outcomes
-
-Agent reviews will post a verdict (`APPROVE`, `REQUEST_CHANGES`, or `COMMENT`) and findings as a PR review and check-run. Address any `REQUEST_CHANGES` before merging.
-
-## 5. Additional Guidelines
-
-- Use active voice and present tense in documentation.
-- Link all new concepts to their definitions.
-- Do not document features that do not exist yet.
+1. **Fork and clone** the repository.
+2. **Identify affected files** and consult the relevant agent(s).
+3. **Read agent files** for conventions.
+4. **Make your changes** and ensure tests pass.
+5. **Document consulted agents** in your PR description.
+6. **Open a PR**. Automated review workflows will run.
+7. **Address agent and maintainer feedback**.
 
 For more details, see [docs/contributing.md](docs/contributing.md).
