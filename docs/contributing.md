@@ -1,24 +1,18 @@
-# Contributing Guide
+# Contributor Guide
 
-Thank you for your interest in contributing to this project! This guide explains how to get started, the review process, and the agent-based review system.
+This project uses agent-driven review workflows to maintain quality, security, and correctness. Follow these steps to contribute:
 
-## Quickstart
+## Workflow Overview
 
-1. **Fork and clone the repository:**
-   ```bash
-   git clone https://github.com/<your-username>/tuning-coach.git
-   cd tuning-coach
-   ```
-2. **Install dependencies:**
-   See [Getting Started](getting-started.md).
-3. **Create a feature branch:**
-   ```bash
-   git checkout -b my-feature
-   ```
+1. **Fork** and clone the repository.
+2. **Create** a branch for your changes.
+3. **Identify** which agent(s) to consult based on the files you plan to edit (see routing matrix below).
+4. **Consult** the relevant agent files before writing code.
+5. **Note** consulted agents in your PR description: `Consulted: <agent-name> per routing matrix.`
+6. **Commit** changes with [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
+7. **Push** and open a PR.
 
 ## Agent Routing Matrix
-
-Before you start coding, **identify which agent(s) you must consult** based on the files you plan to change. This is enforced by automated review workflows. The routing matrix is:
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -30,12 +24,6 @@ Before you start coding, **identify which agent(s) you must consult** based on t
 | Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
-
-**You must read the relevant agent file(s) before writing code, and note them in your PR description as:**
-
-```
-Consulted: <agent-name> per routing matrix
-```
 
 ## Automated Review Workflows
 
@@ -50,31 +38,16 @@ Four path-scoped review workflows enforce this matrix on every PR:
 
 All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
 
-## Making Changes
+## Commit Messages
 
-- **Write code and tests**. Follow the style and conventions in the codebase.
-- **Update documentation** if your change affects the user interface, API, or behavior.
-- **Run tests** before submitting:
-  ```bash
-  cargo test
-  # or for overlay
-  npm test
-  ```
+- Use Conventional Commits for all changes.
+- Example: `fix: correct lap validity calculation`
 
-## Submitting a Pull Request
+## Documentation
 
-1. **Push your branch** to your fork:
-   ```bash
-   git push origin my-feature
-   ```
-2. **Open a pull request** against the main repository.
-3. **Fill out the PR template**. Include which agent(s) you consulted per the routing matrix.
-4. **Address automated review feedback** from the required workflows.
-
-## Code of Conduct
-
-This project follows the [Contributor Covenant](https://www.contributor-covenant.org/). Be respectful and constructive.
+- Update `/docs` and `README.md` as needed.
+- Follow [tech-writer conventions](docs/contributing.md).
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same license as the project.
+By submitting a PR, you agree your contributions are licensed under the project's SPDX license.

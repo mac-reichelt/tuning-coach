@@ -1,23 +1,19 @@
 # Contributing
 
-Thank you for your interest in contributing! This project welcomes pull requests and issues from the community.
+Welcome! This project uses agent-driven review workflows to ensure code quality, security, and correctness. Please follow these steps when contributing:
 
 ## Getting Started
 
-1. **Fork the repository** and clone it locally:
-   ```bash
-   git clone https://github.com/<your-username>/tuning-coach.git
-   cd tuning-coach
-   ```
-2. **Install dependencies** as described in [docs/getting-started.md](docs/getting-started.md).
-3. **Create a new branch** for your change:
-   ```bash
-   git checkout -b my-feature
-   ```
+- **Fork** the repository and clone your fork.
+- **Create** a new branch for your changes.
+- **Make** your changes and commit with clear, conventional commit messages.
+- **Push** your branch and open a Pull Request (PR).
 
-## Agent Routing Matrix & Review Workflows
+## Agent Routing Matrix
 
-Before making changes, **identify which agent(s) you must consult** based on the files you plan to edit. This is enforced by automated review workflows. See the table below:
+Before implementing any changes, identify which agents match the files you plan to touch using the routing matrix below. Read those agent files before writing code, and note them in your PR description as:
+
+`Consulted: <agent-name> per routing matrix.`
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -30,13 +26,7 @@ Before making changes, **identify which agent(s) you must consult** based on the
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-**You must read the relevant agent file(s) before writing code, and note them in your PR description as:**
-
-```
-Consulted: <agent-name> per routing matrix
-```
-
-### Automated Review Workflows
+## Automated Review Workflows
 
 Four path-scoped review workflows enforce this matrix on every PR:
 
@@ -49,31 +39,27 @@ Four path-scoped review workflows enforce this matrix on every PR:
 
 All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
 
-## Making Changes
+## Commit Messages
 
-- **Write code and tests**. Follow the style and conventions in the codebase.
-- **Update documentation** if your change affects the user interface, API, or behavior.
-- **Run tests** before submitting:
-  ```bash
-  cargo test
-  # or for overlay
-  npm test
-  ```
+- Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
+- Example: `feat: add telemetry packet parser`
 
-## Submitting a Pull Request
+## PR Description
 
-1. **Push your branch** to your fork:
-   ```bash
-   git push origin my-feature
-   ```
-2. **Open a pull request** against the main repository.
-3. **Fill out the PR template**. Include which agent(s) you consulted per the routing matrix.
-4. **Address automated review feedback** from the required workflows.
+- Clearly describe the purpose of your changes.
+- List consulted agents per the routing matrix.
+- Reference related issues or ADRs.
 
-## Code of Conduct
+## Documentation
 
-This project follows the [Contributor Covenant](https://www.contributor-covenant.org/). Be respectful and constructive.
+- Update documentation in `/docs` and `README.md` as needed.
+- Follow the [tech-writer conventions](docs/contributing.md).
+
+## Code Review
+
+- Automated agent reviews will run on your PR.
+- Address any feedback from agent reviews or maintainers.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same license as the project.
+By submitting a PR, you agree your contributions are licensed under the project's SPDX license.
