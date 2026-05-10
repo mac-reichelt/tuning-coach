@@ -1,162 +1,53 @@
-# Contributing to tuning-coach
+# Contributing
 
-Thanks for considering a contribution! This project showcases an
-agent-augmented development workflow, and contributions of any size are
-welcome — from typo fixes to entire features.
+This project uses agent-driven review workflows to ensure quality, security, and correctness. Please follow these steps when contributing:
 
-## Code of Conduct
+## 1. Agent Routing Matrix
 
-By participating, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
+Before making changes, consult the agent routing matrix to determine which agent(s) you need to read and reference in your PR:
 
-## Quick Links
+| Path glob | Agent(s) to consult before editing | Rationale |
+|---|---|---|
+| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` | Packet schema is the source of truth; agent file must stay in sync with code |
+| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice + correct telemetry semantics |
+| `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
+| `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
+| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security (covered by devops-review.yml and security-review.yml) |
+| Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
+| New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
+| `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-- [Open issues](https://github.com/mac-reichelt/tuning-coach/issues)
-- [Discussions](https://github.com/mac-reichelt/tuning-coach/discussions)
-- [Plan + Roadmap](docs/PLAN.md)
-- [Architecture Decisions](docs/adr/)
+## 2. Automated Review Workflows
 
-## How We Work
+Your PR will trigger automated review workflows based on the files you change:
 
-We use a **simulated software team** of Copilot agents:
+| Workflow | Check name | In-scope when |
+|---|---|---|
+| `.github/workflows/security-review.yml` | `security-review verdict` | Workflow/action files, shell scripts, or security-sensitive file names change |
+| `.github/workflows/qa-review.yml` | `qa-review verdict` | `sidecar/src/**` or `overlay/**` changes without accompanying test-file changes |
+| `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
+| `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
 
-- **producer** — turns requests into user stories with acceptance criteria
-- **architect** — owns ADRs and interface contracts
-- **software-engineer** — implements stories
-- **qa-engineer** — owns test coverage
-- **devops-engineer** — owns CI/CD and releases
-- **tech-writer** — owns docs
-- **code-review** + **security-review** — gate every non-trivial PR
-- **coordinator** — dispatches work across the team
+Out-of-scope PRs post a passing check so branch protection is not blocked.
 
-Plus project-specific experts:
-- **telemetry-expert** — Forza UDP packet schema, sim physics
-- **race-engineer** — chassis tuning theory and rule validation
+## 3. Procedural Steps
 
-Agent definitions live in [`.github/agents/`](.github/agents/).
+- **Fork and clone** the repository.
+- **Create a branch** for your changes.
+- **Consult agent files** in `.github/agents/` as per the routing matrix.
+- **Document agent consultation** in your PR description: `Consulted: <agent-name> per routing matrix`.
+- **Add or update tests** for any new or changed public functions/modules.
+- **Submit your PR** and respond to agent review feedback.
 
-You don't need to use the agents to contribute — humans are first-class
-contributors. But if you do, the patterns are documented in each agent file.
+## 4. Additional Guidelines
 
-## Development Setup
+- **ADR:** New architecture decisions go in `docs/adr/`.
+- **Security:** Changes involving authentication, secrets, or cryptography require security review.
+- **CI/CD:** Workflow or action changes require devops and security review.
+- **Testing:** All new public interfaces must have corresponding tests.
 
-### Prerequisites
-
-- Rust stable (latest) — install via [rustup.rs](https://rustup.rs/)
-- Node.js 20+ (only if hacking on the overlay tooling)
-- A Forza Motorsport (2023) install — for live testing
-- [SimHub](https://www.simhubdash.com/) — for overlay rendering
-- (Linux dev only) `pkg-config libssl-dev libsqlite3-dev tesseract-ocr libtesseract-dev libleptonica-dev`
-
-### Clone + build
-
-```bash
-git clone https://github.com/mac-reichelt/tuning-coach.git
-cd tuning-coach
-cd sidecar && cargo build
-```
-
-### Run tests + lint locally
-
-```bash
-# Rust
-cd sidecar
-cargo fmt --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-
-# Overlay (when applicable)
-cd overlay
-npm ci
-npm run lint --if-present
-npm test --if-present
-```
-
-These match what CI runs.
-
-## Workflow
-
-1. **Find or open an issue.** Use the Issue Forms in
-   [.github/ISSUE_TEMPLATE](.github/ISSUE_TEMPLATE) — they're structured to
-   feed directly into the producer agent's intake.
-2. **Branch.** `git checkout -b <type>/<area>-<short-slug>` (e.g.,
-   `feat/sidecar-udp-parser`).
-3. **Implement.** Smallest set of changes that satisfy the acceptance criteria.
-4. **Test.** Add or update tests for new behavior. Run lint + test locally.
-5. **Commit.** Conventional Commits format (see below).
-6. **PR.** Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md). Link the
-   issue with `Closes #N`.
-7. **CI.** All required checks must pass.
-8. **Review.** The `agent-review` check runs on each non-draft, non-Dependabot
-   PR update and must pass (or be neutral on skip paths) before merge.
-9. **Merge.** Squash-merge keeps history clean. release-please handles the
-   version bump.
-
-## Conventional Commits
-
-PR titles **must** follow [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-<type>(<scope>): <imperative summary>
-```
-
-Allowed types: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`,
-`ci`, `chore`, `revert`.
-
-Examples:
-- `feat(sidecar): parse Forza UDP Dash packet`
-- `fix(overlay): debounce hotkey acks to prevent UI flicker`
-- `docs(readme): add Stream Deck profile import instructions`
-
-Add `!` after the type for breaking changes:
-```
-feat(api)!: rename /telemetry endpoint to /stream/telemetry
-```
-
-…and include a `BREAKING CHANGE:` footer in the body.
-
-This is enforced by the `pr-title` workflow.
-
-## Agent review check
-
-`agent-review` is a required status check for merge gating. On PR events
-(`opened`, `synchronize`, `reopened`, `ready_for_review`), it:
-
-- reads `.github/agents/code-review.agent.md` as review conventions
-- reviews the changed files + full diff through GitHub Models
-- emits a verdict: `APPROVE`, `REQUEST_CHANGES`, or `COMMENT`
-- publishes a check run named `agent-review` with:
-  - `success` for `APPROVE`
-  - `failure` for `REQUEST_CHANGES`
-  - `neutral` for `COMMENT`
-- posts findings as a PR review comment
-
-The workflow skips expensive review runs for draft PRs, Dependabot PRs, and
-docs-only/dependabot-config-only changes.
-
-## Code Style
-
-### Rust (sidecar)
-
-- `cargo fmt` — formatting (no opinions; use rustfmt defaults)
-- `cargo clippy --workspace --all-targets -- -D warnings` — lints
-- `thiserror` for library errors, `anyhow` for binary main
-- `tracing` for structured logging
-- `tokio` for async; prefer channels over shared mutex
-- Tests in `#[cfg(test)] mod tests` blocks; integration tests in `tests/`
-
-### JavaScript (overlay)
-
-- ES modules, vanilla — no framework, no build step
-- ESLint + Prettier config (TBD)
-- `vitest` for tests
-
-## Security
-
-If you find a security issue, **please don't open a public issue**. Use
-[private vulnerability reporting](https://github.com/mac-reichelt/tuning-coach/security/advisories/new).
-See [SECURITY.md](SECURITY.md).
-
-## License
-
-By contributing, you agree your contribution will be licensed under the [MIT
-License](LICENSE).
+## Reference
+- [docs/contributing.md](docs/contributing.md)
+- [Agent files](.github/agents/)
+- [Architecture Decision Records](docs/adr/)
+- [README.md](README.md)

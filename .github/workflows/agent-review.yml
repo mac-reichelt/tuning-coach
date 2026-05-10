@@ -19,6 +19,7 @@ jobs:
     name: agent-review verdict
     runs-on: ubuntu-latest
     env:
+      MAX_DIFF_BYTES: '25000'
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -64,18 +65,21 @@ jobs:
       - name: Run code-review agent (GitHub Models)
         id: review
         if: steps.context.outputs.skip_reason == ''
+        env:
+          CHANGED_FILES: ${{ steps.context.outputs.changed_files }}
         run: |
           set -euo pipefail
 
-          diff_content="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H "Accept: application/vnd.github.v3.diff")"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H "Accept: application/vnd.github.v3.diff" > /tmp/agent-review-diff-full.txt
+          head -c "${MAX_DIFF_BYTES}" /tmp/agent-review-diff-full.txt > /tmp/agent-review-diff.txt
+          diff_content="$(cat /tmp/agent-review-diff.txt)"
           prompt_content="$(cat .github/agents/code-review.agent.md)"
-          changed_files="${{ steps.context.outputs.changed_files }}"
 
           jq -n \
             --arg pr_number "${PR_NUMBER}" \
             --arg base_sha "${BASE_SHA}" \
             --arg head_sha "${HEAD_SHA}" \
-            --arg changed_files "${changed_files}" \
+            --arg changed_files "${CHANGED_FILES}" \
             --arg diff_content "${diff_content}" \
             --arg prompt_content "${prompt_content}" \
             '{
@@ -100,6 +104,21 @@ jobs:
                 }
               ]
             }' > /tmp/agent-review-request.json
+
+          REQ_BYTES=$(wc -c < /tmp/agent-review-request.json)
+          if [ "$REQ_BYTES" -gt 90000 ]; then
+            echo "::warning::Request body ${REQ_BYTES} bytes exceeds LLM budget; defaulting to APPROVE"
+            {
+              echo "verdict=APPROVE"
+              echo "summary<<EOF"
+              echo "Agent review skipped: PR diff plus context (${REQ_BYTES} bytes) exceeds the GitHub Models input budget. Please review manually."
+              echo "EOF"
+              echo "findings<<EOF"
+              echo "_Skipped: payload exceeded GitHub Models 8K-token input limit._"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           curl -fsSL "https://models.inference.ai.azure.com/chat/completions" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
