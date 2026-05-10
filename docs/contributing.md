@@ -1,12 +1,14 @@
-# Contributor Guide
+# Contributing
 
-This project uses agent-driven review workflows to ensure quality, correctness, and security. Please follow these guidelines when contributing.
+Welcome! This project uses agent-driven review and a routing matrix to ensure every change gets the right expert eyes. Please follow these steps when contributing:
 
 ## Agent Routing Matrix
 
-Before making changes, identify which agent(s) match the files you plan to touch. Consult the relevant agent files and note them in your PR description:
+Before you make changes, identify which agents match the files you plan to touch. Consult the agent files listed below and note them in your PR description as:
 
-`Consulted: <agent-name> per routing matrix.`
+```
+Consulted: <agent-name> per routing matrix
+```
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -21,7 +23,7 @@ Before making changes, identify which agent(s) match the files you plan to touch
 
 ## Automated Review Workflows
 
-The following agent review workflows run automatically on every PR:
+Four path-scoped review workflows enforce this matrix on every PR:
 
 | Workflow | Check name | In-scope when |
 |---|---|---|
@@ -30,31 +32,33 @@ The following agent review workflows run automatically on every PR:
 | `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
 | `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
 
-Out-of-scope PRs post a passing skip-success check so branch protection is not blocked.
+All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
 
-## PR Checklist
+## How to Contribute
 
-- [ ] Consulted relevant agent(s) per routing matrix
-- [ ] Added/updated tests for new public functions/modules
-- [ ] Updated documentation as needed
-- [ ] PR description includes consulted agent(s)
+1. **Fork and clone** the repo.
+2. **Create a branch** for your change.
+3. **Identify agent(s)** per the routing matrix above.
+4. **Consult agent files** as needed.
+5. **Make your changes** and commit.
+6. **Open a PR**. In your PR description, list consulted agents.
+7. **Review checks** will run automatically. Address any feedback from agents.
 
-## Submitting a Pull Request
+## Code Style & Tests
 
-1. **Fork and clone the repository.**
-2. **Create a new branch** for your changes.
-3. **Make your changes.**
-4. **Run tests** and verify your changes locally.
-5. **Push your branch** and open a pull request.
-6. **Fill out the PR template** and list consulted agents.
-7. **Wait for agent review checks** to complete. Address any feedback from agent reviewers.
-8. **Respond to comments** and update your PR as needed.
+- Follow the code style in existing files.
+- Add tests for new public functions, modules, or features.
+- If you change source files under `sidecar/src/` or `overlay/` without updating tests, the `qa-review` workflow will flag missing coverage.
 
-## Additional Resources
+## Docs & ADRs
 
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — quickstart contributor guide
-- [docs/adr/](adr/) — architecture decision records
+- Update documentation in `/docs` as needed.
+- New ADRs go in `docs/adr/` and require architect review.
 
-## License
+## CI & Security
 
-Contributions are accepted under the project's license. See [../LICENSE](../LICENSE).
+- Changes to workflows or security-sensitive files trigger `devops-review` and `security-review` checks.
+
+## Questions?
+
+Open an issue or ask in discussions.
