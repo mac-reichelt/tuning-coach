@@ -58,8 +58,8 @@ DashTemplates\
 ### 3 — Enable in SimHub
 
 1. Open SimHub → **Overlays** tab.
-2. Click **Add overlay** and select `tuning-coach` from the list.
-3. Position and resize the overlay on your screen as desired.
+2. Look for **tuning-coach** in the **Web overlays** list (not the classic Dash list — our overlay is an HTML web overlay, not a `.djson` native dash).
+3. Enable it and position/resize it on your screen as desired.
 4. Start a Forza Motorsport session — the overlay will connect automatically.
 
 ## Usage
@@ -85,7 +85,7 @@ pick this up automatically.
 | Connection bar stays amber/red | Sidecar not running | Start `tuning-coach-sidecar` before loading the overlay |
 | Connection bar stays amber/red | Wrong WS URL | Append `?ws=ws://127.0.0.1:<port>/ws` to the overlay URL |
 | No telemetry data shown | Forza data-out not configured | Follow the [Forza data-out setup](../docs/getting-started.md#configure-forza-data-out) |
-| Overlay not visible in SimHub | Overlay not enabled | Enable **tuning-coach** in the SimHub Overlays list |
+| Overlay not visible in SimHub | Overlay not enabled | Enable **tuning-coach** in the SimHub **Web overlays** list (not the classic Dash list — this is an HTML overlay, not a `.djson` native dash) |
 | Recommendation slot never appears | Phase 7 heuristics not yet active | Expected — placeholder is shown until heuristics land |
 
 ## Architecture
@@ -113,7 +113,7 @@ human-readable summary.
 overlay/
 ├── README.md
 ├── CHANGELOG.md
-├── manifest.json          # SimHub overlay manifest
+├── manifest.json          # SimHub web overlay manifest (manifestVersion, type: "web", target: "overlay")
 ├── index.html             # Entry point
 ├── src/
 │   ├── ws-client.js       # WS client with reconnect-with-backoff
