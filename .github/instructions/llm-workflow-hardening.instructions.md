@@ -3,12 +3,12 @@ applyTo: '.github/workflows/**'
 description: 'Security and reliability patterns for LLM-driven GitHub Actions workflows. Apply when writing or editing any workflow that consumes model output, posts PR/issue comments, or runs against agent-authored content.'
 ---
 
+
 # Hardening LLM-driven GitHub Actions workflows
 
-Lessons from this repo's agent automation pipeline (`agent-review.yml`,
-`tech-writer.yml`, `devops-review.yml`, etc.). Read this before adding or
-editing any workflow that runs an LLM, posts an LLM verdict, or applies
-model-emitted patches.
+Lessons from `tuning-coach` agent automation pipeline.
+See the [`tuning-coach` repo](https://github.com/mac-reichelt/tuning-coach) and the companion
+[`llm-workflow-payload-limits`](./llm-workflow-payload-limits.instructions.md) instructions.
 
 ## Threat model
 
@@ -55,8 +55,6 @@ required check blocks PR. Real incident on PR #84.
 - Build body via `printf` / `echo` to a file, send via `jq --rawfile` so JSON
   encoding handles all special bytes.
 
-Canonical example: `agent-review.yml` lines 163–227.
-
 ## Pattern 2: path traversal in patch appliers
 
 **BAD:** Allowlist via regex prefix
@@ -80,7 +78,7 @@ assert not Path(path).is_absolute()
 assert any(target.relative_to(real_root).parts[0] == a or
            str(target.relative_to(real_root)) == a for a in ALLOWED)
 ```
-Canonical example: `.github/scripts/apply-tech-writer-patches.py`.
+See `apply-tech-writer-patches.py` in tuning-coach.
 
 ## Pattern 3: don't use forgeable loop guards
 
@@ -104,9 +102,6 @@ GitHub branch protection treats "skipped because `if:`" as "never reported"
   skip-success job for dependabot that just publishes the check as `success`.
 - Or simpler: omit the workflow from the required list (`gh api repos/$O/$R/branches/main/protection/required_status_checks/contexts -X DELETE -f 'contexts[]=NAME'`).
 
-Real incident: `pr-title.yml` and `tech-writer.yml` both had the skip,
-permanently blocking dependabot PRs #91, #92. Fix landed in PR #93.
-
 ## Pattern 5: GHA expression parsing inside shell comments
 
 Workflow validation FAILS on a literal `${{ }}` substring even inside a `run:`
@@ -117,7 +112,7 @@ outside of intended expressions.
 Co-symptom: when a workflow fails YAML/expression validation, `gh api`
 sometimes shows the run with `name: .github/workflows/X.yml` (path instead of
 declared `name:`) AND lists jobs from sibling workflows under it. Misleading
-— check `actionlint` or the raw workflow log.
+— check actionlint or the raw workflow log.
 
 ## Pattern 6: CodeQL actions-queries crash on emoji+printf
 
@@ -144,10 +139,9 @@ user-owned Projects v2 (PAT limitation).
 
 `copilot-finalize.yml` uses `pull_request_target` (needs to mark draft PRs
 ready) but does no checkout. `tech-writer.yml` uses `pull_request` (checks
-out PR head, runs LLM analysis on it). `auto-approve-bots.yml` uses
-`pull_request_target` (needs `pull-requests: write`) but does no checkout.
+out PR head, runs LLM analysis on it).
 
-## Pattern 9: fork-PR contributor approval gate
+## Pattern 9b: fork-PR contributor approval gate
 
 Symptom: Copilot/bot PRs sit forever with workflows stuck in `action_required`.
 You cannot `gh api .../actions/runs/$R/approve` non-fork runs (returns 403
@@ -189,17 +183,61 @@ case "$PR_AUTHOR" in
 esac
 ```
 
-`devops-review` LLM may flag env-var interpolation as injection — false
+devops-review LLM may flag env-var interpolation as injection — false
 positive when vars are in `"$VAR"` (env vars are not re-evaluated by shell
 inside double quotes). Add the shell-side allowlist anyway to satisfy it.
 
 ## Pattern 11: GitHub Models payload limits
 
-See companion instruction `llm-workflow-payload-limits.instructions.md`.
-TL;DR: do not include the file corpus in the LLM payload — diff + filename
-inventory + agent prompt only.
+See [`llm-workflow-payload-limits`](./llm-workflow-payload-limits.instructions.md).
+TL;DR: cap diff at **25 KB** (not 60 KB), do not include the file corpus, and
+add a pre-curl byte check that bails to APPROVE if the assembled request
+exceeds 90 KB.
 
-## Reference workflow files in this repo
+## Pattern 12: SIGPIPE on `gh api | head -c`
+
+`gh api ... | head -c "$N"` returns exit code 141 (SIGPIPE) under
+`set -euo pipefail` because `head` closes its stdin once the byte cap is
+reached, sending SIGPIPE to `gh`. The fix: write the full output to a tempfile
+first, then run `head -c` against the file (no pipe → no SIGPIPE):
+
+```bash
+# WRONG: trips SIGPIPE under pipefail
+gh api "repos/$REPO/pulls/$PR" -H 'Accept: application/vnd.github.v3.diff' \
+  | head -c "$MAX_DIFF_BYTES" > /tmp/diff.txt
+
+# RIGHT: tempfile, then truncate
+gh api "repos/$REPO/pulls/$PR" -H "Accept: application/vnd.github.v3.diff" > /tmp/diff-full.txt
+head -c "$MAX_DIFF_BYTES" /tmp/diff-full.txt > /tmp/diff.txt
+```
+
+## Pattern 13: Copilot SWE agent's actual login is `Copilot`
+
+The `pull_request.user.login` for the GitHub Copilot SWE agent's PRs is
+literally **`Copilot`** (Bot type, id 198982749). NOT `copilot-swe-agent[bot]`,
+NOT `app/copilot-swe-agent`. The `gh pr list` UI may display
+`app/copilot-swe-agent` as the author column but that's a render-time alias.
+
+Allowlist gates that check `user.login` against the expected bot identities
+must include all three forms for safety:
+
+```yaml
+if: >-
+  github.event.pull_request.user.login == 'dependabot[bot]' ||
+  github.event.pull_request.user.login == 'copilot-swe-agent[bot]' ||
+  github.event.pull_request.user.login == 'app/copilot-swe-agent' ||
+  github.event.pull_request.user.login == 'Copilot' ||
+  github.event.pull_request.user.login == 'github-actions[bot]'
+```
+
+Symptom of the bug: the `auto-approve-bots` workflow logs as `completed/skipped`
+on every Copilot PR, no error, no approval.
+
+For assigning issues to the bot, the login is `copilot-swe-agent` (no brackets):
+`gh issue edit N --add-assignee copilot-swe-agent`. Yes, all three forms are
+real and contextually different.
+
+## Reference workflow files (canonical, in tuning-coach)
 
 | File | Purpose |
 |------|---------|
@@ -211,14 +249,21 @@ inventory + agent prompt only.
 | `update-pr-branches.yml` | Keep open PRs current with main on push |
 | `auto-approve-bots.yml` | Auto-approve PRs from trusted bot allowlist |
 
-All except `auto-approve-bots.yml` require `secrets.AUTOMATION_PAT` for
-downstream triggering.
+All workflows that **push commits** or need to **trigger downstream
+workflows** require `secrets.AUTOMATION_PAT` (e.g. `tech-writer.yml`,
+`copilot-finalize.yml`, `update-pr-branches.yml`, `auto-assign-copilot.yml`).
+Audit-only review workflows (`agent-review.yml`, `devops-review.yml`,
+`auto-approve-bots.yml`) only read PR data and post reviews/check-runs, so
+they can use the default `secrets.GITHUB_TOKEN`.
 
 ## Real incidents (chronological)
 
-- 2026-04-26: `tech-writer` HTTP 413 → dropped doc corpus from payload
-- 2026-04-26: `agent-review.yml` shell injection via `` `StorageError::Schema` `` → env-var hardening (PR #89)
+- 2026-04-26: tech-writer HTTP 413 → dropped doc corpus (see [`llm-workflow-payload-limits`](./llm-workflow-payload-limits.instructions.md))
+- 2026-04-26: agent-review.yml shell injection via `` `StorageError::Schema` `` → env-var hardening (PR #89)
 - 2026-04-26: CodeQL crash on `printf '🤖 ... %s\n'` → swapped to plain echo
 - 2026-04-26: dependabot-skip on `tech-writer-review` + `conventional` required checks → dependabot PRs permanently BLOCKED → dropped `if:` skips (PR #93)
 - 2026-04-26: Copilot PRs stuck on `action_required` → flipped fork-pr-contributor-approval to `first_time_contributors_new_to_github`
-- 2026-04-26: bot-only PR policy → `auto-approve-bots.yml` + `required_approving_review_count=1` (PR #94)
+- 2026-04-26: bot-only PR policy → auto-approve-bots.yml + required_approving_review_count=1 (PR #94)
+- 2026-04-26: rolled out agent pipeline to 4 sister repos via greenfield bootstraps; admin-merged because 230 KB diffs exceeded LLM budget; filed `tuning-coach#101` for durable budget-bail in agent/devops/security review workflows
+- 2026-04-26: tech-writer SIGPIPE on `gh api | head -c` under `set -euo pipefail` → tempfile-then-truncate (PR #100)
+- 2026-04-26: discovered Copilot SWE agent PR author login is `Copilot` (not `copilot-swe-agent[bot]`); auto-approve-bots silently skipped every Copilot PR; added to allowlist (PR #100)
