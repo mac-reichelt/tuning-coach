@@ -1,10 +1,12 @@
 # Contributing Guide
 
-This guide covers contributor onboarding, agent review routing, and workflow checks.
+This project uses agent-driven review workflows to ensure code quality and domain correctness. Please follow these guidelines when contributing:
 
-## Agent Routing Matrix
+## Agent Routing and Review
 
-Before editing, identify which agent(s) must review your changes. Use the matrix below:
+Before implementing changes, identify which agent(s) match the files you plan to touch using the routing matrix below. Consult the relevant agent files before writing code, and note them in your PR description.
+
+### Routing Matrix
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -17,32 +19,37 @@ Before editing, identify which agent(s) must review your changes. Use the matrix
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-### Automated Review Workflows
+### Automated Review Checks
 
-Four path-scoped review workflows enforce this matrix:
+Four path-scoped review workflows enforce this matrix on every PR:
 
-| Workflow | Check name | In-scope when |
-|---|---|---|
-| `.github/workflows/security-review.yml` | `security-review verdict` | Workflow/action files, shell scripts, or security-sensitive file names change |
-| `.github/workflows/qa-review.yml` | `qa-review verdict` | `sidecar/src/**` or `overlay/**` changes without accompanying test-file changes |
-| `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
-| `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
+- `security-review.yml` — Security-sensitive files, workflows, or auth logic
+- `qa-review.yml` — Source changes without accompanying test changes
+- `telemetry-review.yml` — Telemetry schema or expert agent changes
+- `heuristics-review.yml` — Heuristics/recommendations logic or race-engineer agent changes
 
-Out-of-scope PRs post `success` so checks can be required without blocking unrelated work.
+All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
 
-## Making a PR
+## Steps to Contribute
 
-- **Consult agent files**: Read the relevant agent file(s) before editing in-scope files.
-- **Note consulted agents**: In your PR description, add `Consulted: <agent-name> per routing matrix`.
-- **Run tests**: `cargo test`
-- **Update docs**: If you change public interfaces or workflows, update docs and README.
+1. **Fork and clone the repository**
+2. **Create a new branch**
+3. **Make your changes**
+4. **Consult agent files as per the routing matrix**
+5. **Open a pull request**
+   - Note consulted agents in your PR description: `Consulted: <agent-name> per routing matrix.`
+6. **Wait for agent review checks to complete**
 
-## Coding Standards
+## Running Tests
 
-- Use active voice and present tense in docs.
-- Add or update tests for new public functions/modules.
-- Link new concepts to their definitions.
+- **Rust:**
+  ```bash
+  cargo test
+  ```
+- **Overlay (JS):**
+  ```bash
+  npm test
+  ```
 
 ## License
-
 MIT — see [LICENSE](../LICENSE).

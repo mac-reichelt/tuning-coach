@@ -1,73 +1,57 @@
 # Contributing
 
-Welcome! Follow these steps to contribute to Tuning Coach.
+Thank you for your interest in contributing! This project uses agent-driven review workflows to ensure code quality and domain correctness. Please follow these steps when submitting a pull request:
 
-## Getting Started
+## Workflow Overview
 
-1. **Fork and clone**
-   ```bash
-   git clone https://github.com/<your-org>/tuning-coach.git
-   cd tuning-coach
-   ```
-2. **Install Rust** ([rustup.rs](https://rustup.rs))
-3. **Build**
-   ```bash
-   cargo build --release
-   ```
-4. **Run tests**
-   ```bash
-   cargo test
-   ```
+- **Agent Routing:** Before making changes, identify which agent(s) match the files you plan to touch. Consult the agent files as described below.
+- **Automated Review Checks:** Four path-scoped review workflows enforce agent review on every PR:
+  - `security-review.yml` — Security-sensitive files, workflows, or auth logic
+  - `qa-review.yml` — Source changes without accompanying test changes
+  - `telemetry-review.yml` — Telemetry schema or expert agent changes
+  - `heuristics-review.yml` — Heuristics/recommendations logic or race-engineer agent changes
 
-## Agent Routing and Review Matrix
+All four checks use the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
 
-Before editing, check which agent(s) must review your changes. See [docs/contributing.md](docs/contributing.md) for the full routing matrix.
+## Agent Routing Matrix
 
-- **Security-sensitive files**: security-review agent
-- **CI/CD workflows**: devops-engineer + security-review agents
-- **Telemetry schema**: telemetry-expert agent
-- **Heuristics/recommendations**: race-engineer + telemetry-expert agents
-- **New crates/modules/tests**: qa-engineer agent
+| Path glob | Agent(s) to consult before editing | Rationale |
+|---|---|---|
+| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` | Packet schema is the source of truth; agent file must stay in sync with code |
+| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice + correct telemetry semantics |
+| `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
+| `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
+| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security |
+| Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
+| New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
+| `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-Automated review workflows enforce this matrix:
-- `.github/workflows/security-review.yml`
-- `.github/workflows/qa-review.yml`
-- `.github/workflows/telemetry-review.yml`
-- `.github/workflows/heuristics-review.yml`
+## How to Contribute
 
-Out-of-scope PRs are auto-approved; in-scope PRs require agent verdicts.
+1. **Fork the repository**
+2. **Clone your fork**
+3. **Create a new branch**
+4. **Make your changes**
+5. **Consult agent files as per the routing matrix**
+6. **Open a pull request**
+   - Note consulted agents in your PR description: `Consulted: <agent-name> per routing matrix.`
+7. **Wait for agent review checks to complete**
 
-## Making a PR
+## Running Tests
 
-1. **Create a branch**
-   ```bash
-   git checkout -b <feature-name>
-   ```
-2. **Make your changes**
-3. **Run tests**
-   ```bash
-   cargo test
-   ```
-4. **Document**
-   - Update relevant docs in `docs/` and `README.md`.
-   - If you change agent-reviewed files, note consulted agents in your PR description.
-5. **Push and open a PR**
-   ```bash
-   git push origin <feature-name>
-   ```
+- **Rust:**
+  ```bash
+  cargo test
+  ```
+- **Overlay (JS):**
+  ```bash
+  npm test
+  ```
 
-## PR Review Process
+## Documentation
 
-- Automated agent reviews run for every PR.
-- If your PR changes files in the agent routing matrix, the relevant agent(s) will review.
-- Address any agent feedback before merging.
-
-## Coding Standards
-
-- Use active voice and present tense in docs.
-- Add or update tests for new public functions/modules.
-- Link new concepts to their definitions.
+See [docs/contributing.md](docs/contributing.md) for more details.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+SPDX: MIT — see [LICENSE](LICENSE).

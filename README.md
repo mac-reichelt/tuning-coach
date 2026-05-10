@@ -1,57 +1,37 @@
-# Tuning Coach — AI-powered racing telemetry and tuning
+# Tuning Coach — Real-time race engineering for Forza
 
-Tuning Coach analyzes racing telemetry and recommends setup changes using real-world engineering heuristics. It integrates with SimHub overlays and supports Forza, Assetto Corsa, and more.
+Tuning Coach analyzes telemetry and recommends chassis setup changes in real time. It uses agent-driven review workflows to ensure correctness and quality.
 
 ## Features
-- ✅ Real-time telemetry parsing for Forza and other sims
-- ✅ AI-driven tuning recommendations based on chassis engineering
-- ✅ SimHub overlay for live feedback
-- ✅ Automated agent review workflows for code, security, QA, and tuning logic
+- ✅ Real-time telemetry parsing
+- ✅ Automated tuning recommendations
+- ✅ Agent-driven review for code, heuristics, and security
 
 ## Quickstart
 
-Clone and build:
-
 ```bash
-git clone https://github.com/<your-org>/tuning-coach.git
-cd tuning-coach
-cargo build --release
-```
-
-Run the sidecar and overlay:
-
-```bash
-./target/release/sidecar
-# Open overlay/index.html in SimHub
+git clone ...
+cd ...
+cargo build
+# See docs/getting-started.md for overlay setup
 ```
 
 ## Documentation
 - [Getting Started](docs/getting-started.md)
+- [Configuration](docs/configuration.md)
 - [API Reference](docs/reference/api.md)
-- [Lap Validity](docs/reference/lap-validity.md)
-- [Contributing](docs/contributing.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Status
-| Feature                | Status   |
-|-----------------------|----------|
-| Forza telemetry       | Stable   |
-| Assetto Corsa support | Beta     |
-| SimHub overlay        | Stable   |
-| AI tuning heuristics  | Beta     |
-| Agent review workflows| Stable   |
+| Feature | Status |
+|---------|--------|
+| Telemetry parsing | Stable |
+| Tuning heuristics | Beta |
+| Overlay | Beta |
+| Agent review workflows | Stable |
 
 ## Contributing
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-### Agent Review Workflows
-
-Every PR is checked by automated agent reviews for:
-- Security-sensitive changes
-- QA/test coverage
-- Telemetry schema updates
-- Tuning heuristics logic
-
-See [docs/contributing.md](docs/contributing.md) for the agent routing matrix and review details.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for agent routing and review process.
 
 ## License
 MIT — see [LICENSE](LICENSE).
