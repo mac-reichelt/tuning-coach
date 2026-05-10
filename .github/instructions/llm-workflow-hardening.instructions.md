@@ -7,7 +7,8 @@ description: 'Security and reliability patterns for LLM-driven GitHub Actions wo
 # Hardening LLM-driven GitHub Actions workflows
 
 Lessons from `tuning-coach` agent automation pipeline.
-See [[tuning-coach]] and [[llm-workflow-payload-limits]].
+See the [`tuning-coach` repo](https://github.com/mac-reichelt/tuning-coach) and the companion
+[`llm-workflow-payload-limits`](./llm-workflow-payload-limits.instructions.md) instructions.
 
 ## Threat model
 
@@ -188,9 +189,10 @@ inside double quotes). Add the shell-side allowlist anyway to satisfy it.
 
 ## Pattern 11: GitHub Models payload limits
 
-See [[llm-workflow-payload-limits]]. TL;DR: cap diff at **25 KB** (not 60 KB),
-do not include the file corpus, and add a pre-curl byte check that bails to
-APPROVE if the assembled request exceeds 90 KB.
+See [`llm-workflow-payload-limits`](./llm-workflow-payload-limits.instructions.md).
+TL;DR: cap diff at **25 KB** (not 60 KB), do not include the file corpus, and
+add a pre-curl byte check that bails to APPROVE if the assembled request
+exceeds 90 KB.
 
 ## Pattern 12: SIGPIPE on `gh api | head -c`
 
@@ -247,11 +249,16 @@ real and contextually different.
 | `update-pr-branches.yml` | Keep open PRs current with main on push |
 | `auto-approve-bots.yml` | Auto-approve PRs from trusted bot allowlist |
 
-All require `secrets.AUTOMATION_PAT` for downstream triggering.
+All workflows that **push commits** or need to **trigger downstream
+workflows** require `secrets.AUTOMATION_PAT` (e.g. `tech-writer.yml`,
+`copilot-finalize.yml`, `update-pr-branches.yml`, `auto-assign-copilot.yml`).
+Audit-only review workflows (`agent-review.yml`, `devops-review.yml`,
+`auto-approve-bots.yml`) only read PR data and post reviews/check-runs, so
+they can use the default `secrets.GITHUB_TOKEN`.
 
 ## Real incidents (chronological)
 
-- 2026-04-26: tech-writer HTTP 413 → dropped doc corpus ([[llm-workflow-payload-limits]])
+- 2026-04-26: tech-writer HTTP 413 → dropped doc corpus (see [`llm-workflow-payload-limits`](./llm-workflow-payload-limits.instructions.md))
 - 2026-04-26: agent-review.yml shell injection via `` `StorageError::Schema` `` → env-var hardening (PR #89)
 - 2026-04-26: CodeQL crash on `printf '🤖 ... %s\n'` → swapped to plain echo
 - 2026-04-26: dependabot-skip on `tech-writer-review` + `conventional` required checks → dependabot PRs permanently BLOCKED → dropped `if:` skips (PR #93)

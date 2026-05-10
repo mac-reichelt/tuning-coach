@@ -28,22 +28,29 @@ is ~30% bigger than the raw file. Empirical thresholds:
 2. Send only: diff (capped), changed-files list, agent prompt file
 3. Do NOT include the full repo file corpus
 4. Add a belt-and-suspenders pre-curl check on `wc -c < /tmp/req.json`:
-   if assembled body > 90 KB, skip the LLM call and emit an APPROVE-equivalent
-   verdict telling humans to verify manually.
+   if assembled body > 90 KB, skip the LLM call and emit a distinct
+   `SKIPPED` (budget-exceeded) verdict that completes the required check
+   without implying model approval. The example below uses `APPROVE` for
+   backwards-compatibility with workflows whose downstream steps already
+   gate on `APPROVE`/`UPDATES_NEEDED`; for new workflows prefer a dedicated
+   `SKIPPED` verdict whose summary makes it explicit that the model review
+   did not run and humans must verify manually.
 
 ```bash
 REQ_BYTES=$(wc -c < /tmp/req.json)
 if [ "$REQ_BYTES" -gt 90000 ]; then
-  echo "::warning::Request body ${REQ_BYTES} bytes exceeds LLM budget; defaulting to APPROVE"
-  jq -n --argjson n "$REQ_BYTES" '{verdict:"APPROVE",summary:("PR diff plus context (" + ($n|tostring) + " bytes) exceeds LLM budget. Skipping inline review; please verify manually."),patches:[]}' > /tmp/verdict.json
+  echo "::warning::Request body ${REQ_BYTES} bytes exceeds LLM budget; skipping inline review"
+  jq -n --argjson n "$REQ_BYTES" '{verdict:"APPROVE",summary:("PR diff plus context (" + ($n|tostring) + " bytes) exceeds LLM budget. Inline LLM review did NOT run; please verify manually."),patches:[]}' > /tmp/verdict.json
   # ... emit outputs and exit 0
 fi
 ```
 
 ## Reference
-- See [[tuning-coach]] `.github/workflows/tech-writer.yml` (PR #100)
-- The same fix needs propagation to `agent-review.yml`, `devops-review.yml`,
-  `security-review.yml` — they all hit the same endpoint with similar prompts.
+- See [`tuning-coach`'s `tech-writer.yml`](https://github.com/mac-reichelt/tuning-coach/blob/main/.github/workflows/tech-writer.yml) (introduced in PR #100).
+- The same fix needs propagation to the existing `agent-review.yml` and
+  `devops-review.yml`. If a dedicated `security-review.yml` workflow is added
+  in the future (tracked by `tuning-coach#101`), apply the same payload-budget
+  guard there as well.
 
 ## Real incident
 2026-04-26: rolling out the agent pipeline to 4 sister repos via greenfield
