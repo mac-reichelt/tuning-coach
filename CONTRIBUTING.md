@@ -1,72 +1,68 @@
-# Contributing to Tuning Coach
+# Contributing
 
-Welcome! Follow these steps to contribute code, docs, or tests.
+Thank you for your interest in contributing! This project uses agent-driven review workflows to ensure code quality, security, and correctness. Please follow these steps when submitting a pull request:
 
 ## Getting Started
 
-1. **Fork and clone**
+1. **Fork the repository** and clone your fork.
+2. **Create a new branch** for your changes:
    ```bash
-   git clone https://github.com/<your-org>/tuning-coach.git
-   cd tuning-coach
+   git checkout -b my-feature
    ```
-2. **Create a branch**
-   ```bash
-   git checkout -b <feature-or-bugfix>
-   ```
-3. **Identify agent routing**
-   - Before editing, consult the [agent routing matrix](.github/copilot-instructions.md#agent-routing) to determine which agent(s) must review your changes.
-   - Note consulted agents in your PR description: `Consulted: <agent-name> per routing matrix`.
+3. **Make your changes** and commit them with clear, conventional commit messages.
 
-## Making Changes
+## Agent Review Checks
 
-- **Code:**
-  - Follow Rust and JS/TS style guides.
-  - Add tests for new public functions/modules.
-  - For tuning logic, ensure heuristics match real-world engineering practice.
-- **Docs:**
-  - Update relevant pages in `docs/`.
-  - Use active voice, second person, and scannable formatting.
+Every pull request triggers automated agent reviews based on the files you change. These checks are enforced by GitHub Actions and must pass before your PR can be merged:
 
-## Automated Review Workflows
+- **agent-review**: General code review.
+- **devops-review**: CI/CD and workflow changes.
+- **security-review**: Security-sensitive files or workflows.
+- **telemetry-review**: Telemetry schema and related files.
+- **heuristics-review**: Tuning logic and recommendations.
+- **qa-review**: Ensures test coverage for source changes.
 
-Every PR triggers four automated agent review workflows:
+### Routing Matrix
 
-| Workflow         | Scope                                                        |
-|------------------|-------------------------------------------------------------|
-| security-review  | Security-sensitive files, workflows, actions, shell scripts  |
-| qa-review        | Source changes without accompanying tests                    |
-| telemetry-review | Telemetry schema and expert logic                            |
-| heuristics-review| Tuning logic and race engineering heuristics                 |
+Before implementing changes, consult the relevant agent(s) based on the files you plan to touch. See [Agent Routing](.github/copilot-instructions.md#agent-routing) for details.
 
-These checks must pass for your PR to merge. Out-of-scope PRs are auto-approved.
+| Path glob | Agent(s) to consult before editing |
+|---|---|
+| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | telemetry-expert |
+| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | race-engineer + telemetry-expert |
+| `sidecar/src/storage*.rs`, `sidecar/migrations/**` | architect |
+| `docs/adr/**` (new files) | architect |
+| `.github/workflows/**`, `.github/actions/**` | devops-engineer + security-review |
+| Any file with auth, secrets, OIDC, crypto | security-review |
+| New crates, new public modules, new sidecar tests | qa-engineer |
+| `overlay/**` (logic changes, not pure CSS) | qa-engineer |
 
-## Opening a PR
+### Automated Checks
 
-1. **Push your branch**
-   ```bash
-   git push origin <branch>
-   ```
-2. **Open a pull request**
-   - Fill out the PR template.
-   - List consulted agents per the routing matrix.
-   - Link related issues.
+The following workflows enforce the routing matrix:
 
-## Running Tests
+- `.github/workflows/security-review.yml`
+- `.github/workflows/qa-review.yml`
+- `.github/workflows/telemetry-review.yml`
+- `.github/workflows/heuristics-review.yml`
 
-- **Rust:**
-  ```bash
-  cargo test
-  ```
-- **Overlay (JS/TS):**
-  ```bash
-  npm test
-  ```
+Out-of-scope PRs post a passing check so unrelated work is not blocked.
 
-## Docs
+## Submitting a Pull Request
 
-- [Getting Started](docs/getting-started.md)
-- [API Reference](docs/reference/api.md)
-- [Lap Validity](docs/reference/lap-validity.md)
+1. **Push your branch** to your fork.
+2. **Open a pull request** against the main repository.
+3. **Describe your changes** clearly. If you consulted agent files per the routing matrix, note them in your PR description (e.g., `Consulted: race-engineer per routing matrix`).
+4. **Wait for agent review checks** to complete. Address any feedback.
+
+## Documentation
+
+If your changes affect user-facing behavior, update the relevant documentation:
+
+- [README.md](README.md)
+- [docs/](docs/)
+- [docs/contributing.md](docs/contributing.md)
 
 ## License
-MIT — see [LICENSE](LICENSE).
+
+By contributing, you agree that your code will be released under the project's license.

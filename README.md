@@ -1,53 +1,48 @@
-# Tuning Coach — Real-time Forza tuning recommendations
+# Tuning Coach — Real-time Racing Telemetry & Recommendations
 
-Tuning Coach analyzes telemetry from Forza Motorsport and Forza Horizon to recommend chassis setup changes in real time. It integrates with SimHub overlays and supports custom tuning logic.
+Tuning Coach analyzes racing telemetry and provides actionable tuning recommendations for Forza and other racing sims. It uses agent-driven review workflows to ensure correctness, security, and test coverage.
 
 ## Features
-- ✅ Real-time telemetry parsing from Forza Motorsport/Horizon
-- ✅ Automated tuning recommendations based on race engineering heuristics
-- ✅ SimHub overlay integration for in-game display
-- ✅ Modular agent review workflows for CI/CD, security, QA, and tuning logic
+- ✅ Real-time telemetry parsing and analysis
+- ✅ Automated tuning recommendations based on chassis engineering heuristics
+- ✅ Agent-driven review workflows for code, security, and test coverage
+- ✅ Easy integration with SimHub overlays
 
 ## Quickstart
 
 Clone and build:
 
 ```bash
-git clone https://github.com/<your-org>/tuning-coach.git
+git clone <repo-url>
 cd tuning-coach
-cargo build --release
-```
-
-Run the sidecar:
-
-```bash
-./target/release/tuning-coach-sidecar
+cargo build
 ```
 
 ## Documentation
 - [Getting Started](docs/getting-started.md)
 - [API Reference](docs/reference/api.md)
-- [Lap Validity](docs/reference/lap-validity.md)
 - [Contributing](docs/contributing.md)
 
 ## Status
-| Feature                | Status   |
-|------------------------|----------|
-| Telemetry parsing      | Stable   |
-| Tuning recommendations | Beta     |
-| Overlay integration    | Stable   |
-| Agent review workflows | Stable   |
+| Feature | Status |
+|---------|-------|
+| Telemetry parsing | Stable |
+| Tuning recommendations | Beta |
+| Agent review workflows | Stable |
+| Overlay integration | Beta |
 
-## Agent Routing & Automated Review Workflows
+## Agent Review Workflows
 
-Before implementing changes, identify which agents match the files you plan to touch using the [agent routing matrix](.github/copilot-instructions.md#agent-routing). Four automated review workflows enforce this matrix:
+Every pull request triggers automated agent reviews:
 
-- `security-review`: Security-sensitive files and workflows
-- `qa-review`: Source changes without accompanying tests
-- `telemetry-review`: Telemetry schema and expert logic
-- `heuristics-review`: Tuning logic and race engineering heuristics
+- **agent-review**: General code review
+- **devops-review**: CI/CD and workflow changes
+- **security-review**: Security-sensitive files or workflows
+- **telemetry-review**: Telemetry schema and related files
+- **heuristics-review**: Tuning logic and recommendations
+- **qa-review**: Ensures test coverage for source changes
 
-These checks run on every PR and are required for merge.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [Agent Routing](.github/copilot-instructions.md#agent-routing) for details.
 
 ## Contributing
 See [CONTRIBUTING.md](CONTRIBUTING.md).

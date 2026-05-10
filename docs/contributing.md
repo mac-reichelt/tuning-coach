@@ -1,55 +1,47 @@
 # Contributing Guide
 
-This guide covers how to contribute to Tuning Coach, including agent routing and automated review workflows.
+Welcome! This project uses agent-driven review workflows to maintain quality and correctness. Please read this guide before submitting changes.
 
-## Agent Routing Matrix
+## Agent Review Checks
 
-Before making changes, consult the [agent routing matrix](../.github/copilot-instructions.md#agent-routing) to determine which agent(s) must review your changes. The matrix maps file paths to responsible agents:
+Your pull request will trigger several automated agent reviews:
 
-| Path glob | Agent(s) to consult | Rationale |
-|---|---|---|
-| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` | Packet schema must stay in sync with code |
-| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice |
-| `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
-| `docs/adr/**` (new files) | `architect` | New ADRs need review |
-| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security |
-| Any file with auth, secrets, OIDC, crypto | `security-review` | Security review required |
-| New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
-| `overlay/**` (logic changes) | `qa-engineer` | Overlay test discipline |
+- **agent-review**: General code review
+- **devops-review**: CI/CD and workflow changes
+- **security-review**: Security-sensitive files or workflows
+- **telemetry-review**: Telemetry schema and related files
+- **heuristics-review**: Tuning logic and recommendations
+- **qa-review**: Ensures test coverage for source changes
 
-## Automated Review Workflows
+### Routing Matrix
 
-Four automated review workflows enforce the agent routing matrix:
+Consult the relevant agent(s) before editing files, as described in [Agent Routing](../.github/copilot-instructions.md#agent-routing).
 
-| Workflow | Scope |
+| Path glob | Agent(s) to consult |
 |---|---|
-| `security-review` | Security-sensitive files and workflows |
-| `qa-review` | Source changes without accompanying tests |
-| `telemetry-review` | Telemetry schema and expert logic |
-| `heuristics-review` | Tuning logic and race engineering heuristics |
+| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | telemetry-expert |
+| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | race-engineer + telemetry-expert |
+| `sidecar/src/storage*.rs`, `sidecar/migrations/**` | architect |
+| `docs/adr/**` (new files) | architect |
+| `.github/workflows/**`, `.github/actions/**` | devops-engineer + security-review |
+| Any file with auth, secrets, OIDC, crypto | security-review |
+| New crates, new public modules, new sidecar tests | qa-engineer |
+| `overlay/**` (logic changes, not pure CSS) | qa-engineer |
 
-These checks run on every PR and must pass for merge. Out-of-scope PRs are auto-approved.
+## Steps to Contribute
 
-## PR Process
+1. **Fork and clone** the repository.
+2. **Create a branch** for your changes.
+3. **Make your changes** and commit with conventional messages.
+4. **Open a pull request** and describe your changes. Note any agent files consulted per the routing matrix.
+5. **Wait for agent review checks** to complete. Address feedback as needed.
 
-1. **Consult agent routing matrix** before editing.
-2. **Note consulted agents** in your PR description.
-3. **Open a PR** and fill out the template.
-4. **Wait for agent review checks** to complete.
+## Documentation
 
-## Testing
-
-- Add tests for new public functions/modules.
-- Run all tests before opening a PR:
-  ```bash
-  cargo test
-  npm test
-  ```
-
-## Docs Style
-
-- Use active voice, second person, and scannable formatting.
-- Link all new concepts to their definitions.
+Update docs if your changes affect user-facing behavior:
+- [README.md](../README.md)
+- [docs/](.)
 
 ## License
-MIT — see [LICENSE](../LICENSE).
+
+By contributing, you agree to license your code under the project's license.
