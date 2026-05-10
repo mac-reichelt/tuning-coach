@@ -716,6 +716,20 @@ async fn send_close(socket: &mut WebSocket, code: u16, reason: String) {
             reason: reason.into(),
         })))
         .await;
+    // Drain messages until the peer echoes the close frame, completing the
+    // WebSocket close handshake before we drop the socket.  Without this,
+    // Windows drops the underlying TCP connection with a RST
+    // (WSAECONNRESET / error 10054) before the client can read the close
+    // frame, causing the test to panic instead of receiving CloseFrame(4001).
+    let drain = async {
+        loop {
+            match socket.recv().await {
+                Some(Ok(Message::Close(_))) | None => break,
+                Some(_) => {}
+            }
+        }
+    };
+    let _ = tokio::time::timeout(Duration::from_secs(2), drain).await;
 }
 
 async fn test_emit_telemetry(
