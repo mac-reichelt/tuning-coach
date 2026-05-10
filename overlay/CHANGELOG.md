@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/mac-reichelt/tuning-coach/compare/overlay-v0.1.2...overlay-v0.1.3) (2026-05-10)
+
+
+### Features
+
+* **overlay:** add SimHub-importable overlay bundle and install docs ([#87](https://github.com/mac-reichelt/tuning-coach/issues/87)) ([c6e66bf](https://github.com/mac-reichelt/tuning-coach/commit/c6e66bf38ee2c3c1a2db7c5d5c246a04210e4c96))
+
 ## [0.1.2](https://github.com/mac-reichelt/tuning-coach/compare/overlay-v0.1.1...overlay-v0.1.2) (2026-04-26)
 
 
