@@ -1,10 +1,24 @@
-# Contributor Guide
+# Contributing Guide
 
-Welcome! This project uses a multi-agent review process and automated checks to ensure high-quality, maintainable code. This guide explains how to contribute effectively.
+Thank you for your interest in contributing to this project! This guide explains how to get started, the review process, and the agent-based review system.
+
+## Quickstart
+
+1. **Fork and clone the repository:**
+   ```bash
+   git clone https://github.com/<your-username>/tuning-coach.git
+   cd tuning-coach
+   ```
+2. **Install dependencies:**
+   See [Getting Started](getting-started.md).
+3. **Create a feature branch:**
+   ```bash
+   git checkout -b my-feature
+   ```
 
 ## Agent Routing Matrix
 
-Before you start coding, determine which agent(s) are responsible for reviewing your changes. The agent routing matrix below shows which files are reviewed by which agents. **You must consult the relevant agent file(s) in `.github/agents/` before making changes.**
+Before you start coding, **identify which agent(s) you must consult** based on the files you plan to change. This is enforced by automated review workflows. The routing matrix is:
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -17,7 +31,7 @@ Before you start coding, determine which agent(s) are responsible for reviewing 
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-**In your PR description, include:**
+**You must read the relevant agent file(s) before writing code, and note them in your PR description as:**
 
 ```
 Consulted: <agent-name> per routing matrix
@@ -25,7 +39,7 @@ Consulted: <agent-name> per routing matrix
 
 ## Automated Review Workflows
 
-Every pull request is checked by four automated workflows that enforce the agent routing matrix:
+Four path-scoped review workflows enforce this matrix on every PR:
 
 | Workflow | Check name | In-scope when |
 |---|---|---|
@@ -34,37 +48,33 @@ Every pull request is checked by four automated workflows that enforce the agent
 | `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
 | `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
 
-If your PR is out of scope for a workflow, it will post a passing check (skip-success) and not block your merge.
+All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
 
-## How to Contribute
+## Making Changes
 
-1. **Fork and clone** the repository.
-2. **Create a feature branch**:
-   ```bash
-   git checkout -b my-feature
-   ```
-3. **Identify agent(s)** for your changes using the routing matrix above.
-4. **Consult the agent file(s)** in `.github/agents/` for conventions and requirements.
-5. **Make your changes** and commit with a [conventional commit message](https://www.conventionalcommits.org/en/v1.0.0/).
-6. **Push your branch**:
+- **Write code and tests**. Follow the style and conventions in the codebase.
+- **Update documentation** if your change affects the user interface, API, or behavior.
+- **Run tests** before submitting:
+  ```bash
+  cargo test
+  # or for overlay
+  npm test
+  ```
+
+## Submitting a Pull Request
+
+1. **Push your branch** to your fork:
    ```bash
    git push origin my-feature
    ```
-7. **Open a pull request**. In the PR description, note which agent(s) you consulted.
-8. **Ensure all required checks pass** before merging.
+2. **Open a pull request** against the main repository.
+3. **Fill out the PR template**. Include which agent(s) you consulted per the routing matrix.
+4. **Address automated review feedback** from the required workflows.
 
-## Code Style & Documentation
+## Code of Conduct
 
-- Use **active voice** and **present tense**.
-- Write instructions in **second person**.
-- Prefer **code-first** explanations.
-- Use **headings, bullets, and tables** for clarity.
-- **Link** to definitions and related docs.
-- Avoid marketing language.
-- Indicate minimum compatible version where relevant.
+This project follows the [Contributor Covenant](https://www.contributor-covenant.org/). Be respectful and constructive.
 
-See [README.md](../README.md) and [docs/](./) for more style guidance.
+## License
 
-## Questions?
-
-Open an issue or start a discussion if you need help.
+By contributing, you agree that your contributions will be licensed under the same license as the project.

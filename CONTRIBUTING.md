@@ -1,28 +1,23 @@
 # Contributing
 
-Thank you for your interest in contributing! This project uses a multi-agent review process to ensure code quality, correctness, and security. Please read this guide carefully before opening a pull request.
+Thank you for your interest in contributing! This project welcomes pull requests and issues from the community.
 
 ## Getting Started
 
-1. **Fork the repository** and clone your fork.
-2. **Create a new branch** for your change:
+1. **Fork the repository** and clone it locally:
+   ```bash
+   git clone https://github.com/<your-username>/tuning-coach.git
+   cd tuning-coach
+   ```
+2. **Install dependencies** as described in [docs/getting-started.md](docs/getting-started.md).
+3. **Create a new branch** for your change:
    ```bash
    git checkout -b my-feature
    ```
-3. **Make your changes** and commit them with [conventional commit messages](https://www.conventionalcommits.org/en/v1.0.0/).
-4. **Push your branch** to your fork:
-   ```bash
-   git push origin my-feature
-   ```
-5. **Open a pull request** against the main repository.
 
-## Agent Routing Matrix
+## Agent Routing Matrix & Review Workflows
 
-Before implementing any changes, you must identify which agents are responsible for reviewing the files you plan to touch. Use the routing matrix below to determine which agent(s) to consult. Read the relevant agent files in `.github/agents/` before writing code, and note them in your PR description as:
-
-```
-Consulted: <agent-name> per routing matrix
-```
+Before making changes, **identify which agent(s) you must consult** based on the files you plan to edit. This is enforced by automated review workflows. See the table below:
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -35,7 +30,13 @@ Consulted: <agent-name> per routing matrix
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-## Automated Review Workflows
+**You must read the relevant agent file(s) before writing code, and note them in your PR description as:**
+
+```
+Consulted: <agent-name> per routing matrix
+```
+
+### Automated Review Workflows
 
 Four path-scoped review workflows enforce this matrix on every PR:
 
@@ -48,25 +49,31 @@ Four path-scoped review workflows enforce this matrix on every PR:
 
 All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
 
-## Code Style & Documentation
+## Making Changes
 
-- **Active voice, present tense.**
-- **Second person for instructions.**
-- **Code-first.** Show the command/snippet; explain in 1–2 lines after.
-- **Scannable.** Headings, bullets, tables.
-- **Link everything.**
-- **No marketing fluff.**
-- **Versioned.**
+- **Write code and tests**. Follow the style and conventions in the codebase.
+- **Update documentation** if your change affects the user interface, API, or behavior.
+- **Run tests** before submitting:
+  ```bash
+  cargo test
+  # or for overlay
+  npm test
+  ```
 
-See [docs/contributing.md](docs/contributing.md) for more details.
+## Submitting a Pull Request
 
-## Pull Request Checklist
+1. **Push your branch** to your fork:
+   ```bash
+   git push origin my-feature
+   ```
+2. **Open a pull request** against the main repository.
+3. **Fill out the PR template**. Include which agent(s) you consulted per the routing matrix.
+4. **Address automated review feedback** from the required workflows.
 
-- [ ] I have identified and consulted the correct agent(s) per the routing matrix.
-- [ ] I have included a note in my PR description: `Consulted: <agent-name> per routing matrix`.
-- [ ] I have run all tests and linters locally.
-- [ ] I have updated documentation as needed.
+## Code of Conduct
 
-## Questions?
+This project follows the [Contributor Covenant](https://www.contributor-covenant.org/). Be respectful and constructive.
 
-Open an issue or ask in Discussions.
+## License
+
+By contributing, you agree that your contributions will be licensed under the same license as the project.
