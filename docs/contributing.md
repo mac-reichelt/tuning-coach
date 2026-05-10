@@ -1,14 +1,12 @@
 # Contributing
 
-Welcome! This project uses agent-driven review and a routing matrix to ensure every change gets the right expert eyes. Please follow these steps when contributing:
+Welcome! This project uses agent-driven review workflows to ensure code quality, security, and correctness. Please follow these steps when contributing:
 
 ## Agent Routing Matrix
 
-Before you make changes, identify which agents match the files you plan to touch. Consult the agent files listed below and note them in your PR description as:
+Before implementing any changes, identify which agents match the files you plan to touch using the routing matrix below. Read those agent files before writing code, and note them in your PR description as:
 
-```
-Consulted: <agent-name> per routing matrix
-```
+`Consulted: <agent-name> per routing matrix`
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -34,31 +32,31 @@ Four path-scoped review workflows enforce this matrix on every PR:
 
 All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
 
-## How to Contribute
+## PR Description Requirements
 
-1. **Fork and clone** the repo.
-2. **Create a branch** for your change.
-3. **Identify agent(s)** per the routing matrix above.
-4. **Consult agent files** as needed.
-5. **Make your changes** and commit.
-6. **Open a PR**. In your PR description, list consulted agents.
-7. **Review checks** will run automatically. Address any feedback from agents.
+- List which agent files you consulted, per the routing matrix.
+- If you add or change logic in a path covered by an agent, summarize how your changes align with the agent's conventions.
+- If you add new public functions or modules, ensure you add or update tests. Otherwise, the QA review will request changes.
 
-## Code Style & Tests
+## Procedural Steps
 
-- Follow the code style in existing files.
-- Add tests for new public functions, modules, or features.
-- If you change source files under `sidecar/src/` or `overlay/` without updating tests, the `qa-review` workflow will flag missing coverage.
+1. **Fork and clone** the repository.
+2. **Create a branch** for your changes.
+3. **Consult agent files** as required by the routing matrix.
+4. **Make your changes** and add tests as needed.
+5. **Commit** with a conventional commit message.
+6. **Push** your branch and open a PR.
+7. **Fill out the PR template** and note consulted agents.
+8. **Address agent review feedback** if any checks request changes.
 
-## Docs & ADRs
+## Additional Guidance
 
-- Update documentation in `/docs` as needed.
-- New ADRs go in `docs/adr/` and require architect review.
+- See [README.md](../README.md) for project overview.
+- See [docs/adr/](adr/README.md) for architecture decisions.
+- See [docs/reference/api.md](reference/api.md) for API details.
 
-## CI & Security
+## Anti-Patterns
 
-- Changes to workflows or security-sensitive files trigger `devops-review` and `security-review` checks.
-
-## Questions?
-
-Open an issue or ask in discussions.
+- Do not document features that don't exist yet.
+- Do not skip agent consultation for in-scope files.
+- Do not merge source changes without tests.
