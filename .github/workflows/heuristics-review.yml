@@ -1,10 +1,12 @@
-name: devops-review
+name: heuristics-review
 
-# LLM-driven devops review of workflow/action changes. Mirrors agent-review.yml
-# but uses devops-engineer.agent.md as the system prompt and only audits when
-# files under .github/workflows/** or .github/actions/** change. PRs that don't
-# touch those paths still post a passing `devops-review` check-run so the gate
-# can be marked required in branch protection without blocking unrelated PRs.
+# LLM-driven heuristics/tuning-logic review. Uses race-engineer.agent.md as
+# the system prompt. In-scope when changed files include anything under
+# sidecar/src/heuristics/**, sidecar/src/recommendations/**, or the
+# .github/agents/race-engineer.agent.md itself. Validates tuning logic
+# against real-world chassis engineering practice. All other PRs post a
+# passing skip-success check so this can be a required check without blocking
+# unrelated work.
 
 on:
   pull_request:
@@ -17,16 +19,16 @@ permissions:
   models: read
 
 concurrency:
-  group: devops-review-${{ github.event.pull_request.number }}
+  group: heuristics-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  devops-review:
-    name: devops-review verdict
+  heuristics-review:
+    name: heuristics-review verdict
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      MAX_DIFF_BYTES: '25000'    # ~25 KB cap to stay under GitHub Models 8K-token input budget
+      MAX_DIFF_BYTES: '25000'
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -39,24 +41,22 @@ jobs:
         run: |
           set -euo pipefail
           SKIP_REASON=""
-          if [[ "${{ github.event.pull_request.draft }}" == "true" ]]; then
-            SKIP_REASON="draft"
-          elif [[ "${{ github.event.pull_request.user.login }}" == "dependabot[bot]" ]]; then
-            SKIP_REASON="dependabot"
-          fi
 
           mapfile -t FILES < <(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
 
-          # In-scope only if any changed file lives under workflows/actions
+          # In-scope: heuristics/**, recommendations/**, or the race-engineer agent file
           IN_SCOPE=false
           for f in "${FILES[@]}"; do
-            if [[ "$f" == .github/workflows/* || "$f" == .github/actions/* ]]; then
+            if [[ "$f" == sidecar/src/heuristics/* || \
+                  "$f" == sidecar/src/recommendations/* || \
+                  "$f" == ".github/agents/race-engineer.agent.md" ]]; then
               IN_SCOPE=true
               break
             fi
           done
-          if [[ "$IN_SCOPE" == "false" && -z "$SKIP_REASON" ]]; then
-            SKIP_REASON="no-workflow-changes"
+
+          if [[ "$IN_SCOPE" == "false" ]]; then
+            SKIP_REASON="no-heuristics-changes"
           fi
 
           {
@@ -66,7 +66,7 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Run devops-engineer agent (GitHub Models)
+      - name: Run race-engineer agent (GitHub Models)
         if: steps.ctx.outputs.skip_reason == ''
         id: review
         env:
@@ -74,12 +74,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Tempfile-then-truncate to avoid SIGPIPE under set -euo pipefail when
-          # piping `gh api` directly into `head -c`.
-          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H "Accept: application/vnd.github.v3.diff" > /tmp/devops-diff-full.txt
-          head -c "${MAX_DIFF_BYTES}" /tmp/devops-diff-full.txt > /tmp/devops-diff.txt
-          diff_content="$(cat /tmp/devops-diff.txt)"
-          prompt_content="$(cat .github/agents/devops-engineer.agent.md)"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" -H "Accept: application/vnd.github.v3.diff" > /tmp/heuristics-diff-full.txt
+          head -c "${MAX_DIFF_BYTES}" /tmp/heuristics-diff-full.txt > /tmp/heuristics-diff.txt
+          diff_content="$(cat /tmp/heuristics-diff.txt)"
+          prompt_content="$(cat .github/agents/race-engineer.agent.md)"
 
           jq -n \
             --arg pr "$PR_NUMBER" \
@@ -94,25 +92,22 @@ jobs:
               messages: [
                 {
                   role: "system",
-                  content: "You are the tuning-coach devops-engineer reviewer. Apply the conventions in the supplied devops-engineer.agent.md verbatim. Focus areas: GitHub Actions correctness, security (pull_request_target safety, token scopes, secrets exposure, PR-code-execution risks, third-party action SHA pinning), reliability (timeouts, concurrency groups, retry/idempotency), and best practices (least-privilege permissions, no plaintext credentials, no shell-injection from PR-controlled inputs). Use REQUEST_CHANGES only for real blockers (security holes, broken triggers, will-not-run errors). Use COMMENT for non-blocking suggestions. Use APPROVE when the change is safe and correct. Output strict JSON: {\"verdict\":\"APPROVE|REQUEST_CHANGES|COMMENT\",\"summary\":\"string\",\"findings_markdown\":\"string\"}"
+                  content: "You are the tuning-coach race engineer reviewer. Apply the race engineering conventions in the supplied race-engineer.agent.md verbatim. This PR touches heuristics or recommendations logic. Validate every tuning heuristic and recommendation rule against real-world chassis engineering practice: check that thresholds are physically plausible, that cause-effect relationships are directionally correct (e.g. more front spring rate increases understeer, not oversteer), that confidence levels are appropriate, and that edge cases (zero-speed, invalid telemetry) are handled. Use REQUEST_CHANGES for heuristics that contradict established engineering practice or would give systematically wrong advice. Use APPROVE when the tuning logic is sound. Use COMMENT for suggestions. Output strict JSON: {\"verdict\":\"APPROVE|REQUEST_CHANGES|COMMENT\",\"summary\":\"string\",\"findings_markdown\":\"string\"}"
                 },
                 {
                   role: "user",
-                  content: ("Review this PR for devops/CI correctness.\n\nPR: #" + $pr + "\nBase SHA: " + $base + "\nHead SHA: " + $head + "\n\nChanged files:\n" + $files + "\n\nFull diff:\n" + $diff + "\n\nDevops conventions (.github/agents/devops-engineer.agent.md):\n" + $prompt)
+                  content: ("Heuristics/tuning-logic review of PR #" + $pr + ".\n\nBase SHA: " + $base + "\nHead SHA: " + $head + "\n\nChanged files:\n" + $files + "\n\nFull diff:\n" + $diff + "\n\nRace engineering conventions (.github/agents/race-engineer.agent.md):\n" + $prompt)
                 }
               ]
-            }' > /tmp/devops-req.json
+            }' > /tmp/heuristics-req.json
 
-          # Belt-and-suspenders: bail to APPROVE if assembled body exceeds
-          # ~90 KB (the empirical safe ceiling for the free-tier 8K-token input
-          # limit once JSON-escaping inflates the wire size).
-          REQ_BYTES=$(wc -c < /tmp/devops-req.json)
+          REQ_BYTES=$(wc -c < /tmp/heuristics-req.json)
           if [ "$REQ_BYTES" -gt 90000 ]; then
             echo "::warning::Request body ${REQ_BYTES} bytes exceeds LLM budget; defaulting to APPROVE"
             {
               echo "verdict=APPROVE"
               echo "summary<<EOF"
-              echo "Devops review skipped: PR diff plus context (${REQ_BYTES} bytes) exceeds the GitHub Models input budget. Please verify devops/CI changes manually."
+              echo "Heuristics review skipped: PR diff plus context (${REQ_BYTES} bytes) exceeds the GitHub Models input budget. Please verify tuning-logic changes manually."
               echo "EOF"
               echo "findings<<EOF"
               echo "_Skipped: payload exceeded GitHub Models 8K-token input limit._"
@@ -124,20 +119,21 @@ jobs:
           curl -fsSL "https://models.inference.ai.azure.com/chat/completions" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data-binary @/tmp/devops-req.json > /tmp/devops-resp.json
+            --data-binary @/tmp/heuristics-req.json > /tmp/heuristics-resp.json
 
-          raw="$(jq -r '.choices[0].message.content // ""' /tmp/devops-resp.json)"
+          raw="$(jq -r '.choices[0].message.content // ""' /tmp/heuristics-resp.json)"
           parsed="$(RAW="$raw" python3 -c 'import os; s=os.environ["RAW"].strip(); s="\n".join(l for l in s.splitlines() if not l.strip().startswith("```")).strip() if s.startswith("```") else s; i,j=s.find("{"),s.rfind("}"); print(s[i:j+1] if i!=-1 and j>=i else s)')"
 
           if printf '%s' "$parsed" | jq -e . >/dev/null 2>&1; then
             verdict=$(printf '%s' "$parsed" | jq -r '.verdict // "COMMENT"' | tr '[:lower:]' '[:upper:]')
-            summary=$(printf '%s' "$parsed" | jq -r '.summary // "Devops review completed."')
+            summary=$(printf '%s' "$parsed" | jq -r '.summary // "Heuristics review completed."')
             findings=$(printf '%s' "$parsed" | jq -r '.findings_markdown // "No issues found."')
           else
             verdict="COMMENT"
-            summary="Devops response could not be parsed; posted as comment."
+            summary="Heuristics response could not be parsed; posted as comment."
             findings="$raw"
           fi
+
           case "$verdict" in
             APPROVE|REQUEST_CHANGES|COMMENT) ;;
             *) verdict="COMMENT" ;;
@@ -161,9 +157,9 @@ jobs:
           reason="${{ steps.ctx.outputs.skip_reason }}"
           {
             echo "verdict=COMMENT"
-            echo "summary=Devops review skipped (${reason})."
+            echo "summary=Heuristics review skipped (${reason})."
             echo "findings<<EOF"
-            echo "Devops review skipped for this PR (${reason})."
+            echo "Heuristics review skipped for this PR (${reason})."
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -176,15 +172,16 @@ jobs:
         run: |
           set -euo pipefail
           {
-            printf '🛠️ **devops-review verdict:** %s\n\n' "$VERDICT"
-            printf '%s\n\n' "$SUMMARY"
-            printf '%s\n' "$FINDINGS"
-          } > /tmp/devops-review-body.txt
-          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" \
-            -f event='COMMENT' \
-            -F body=@/tmp/devops-review-body.txt >/dev/null
+            echo "heuristics-review verdict: $VERDICT"
+            echo
+            echo "$SUMMARY"
+            echo
+            echo "$FINDINGS"
+          } > /tmp/heuristics-review-body.txt
+          jq -n --rawfile body /tmp/heuristics-review-body.txt '{event:"COMMENT", body:$body}' \
+            | gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" --input - >/dev/null
 
-      - name: Publish devops-review check-run
+      - name: Publish heuristics-review check-run
         if: always()
         env:
           IN_SCOPE_VERDICT: ${{ steps.review.outputs.verdict }}
@@ -212,14 +209,14 @@ jobs:
           fi
           completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-          existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs?check_name=devops-review" --jq '.check_runs[0].id // empty')"
+          existing_id="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/check-runs?check_name=heuristics-review" --jq '.check_runs[0].id // empty')"
           payload=$(jq -n \
             --arg head_sha "$HEAD_SHA" \
             --arg completed_at "$completed_at" \
             --arg conclusion "$conclusion" \
-            --arg title "devops-review: $VERDICT" \
+            --arg title "heuristics-review: $VERDICT" \
             --arg text "$FINDINGS" \
-            '{name:"devops-review",head_sha:$head_sha,status:"completed",conclusion:$conclusion,completed_at:$completed_at,output:{title:$title,summary:$title,text:$text}}')
+            '{name:"heuristics-review",head_sha:$head_sha,status:"completed",conclusion:$conclusion,completed_at:$completed_at,output:{title:$title,summary:$title,text:$text}}')
 
           if [ -n "$existing_id" ]; then
             update=$(jq 'del(.name,.head_sha)' <<<"$payload")
