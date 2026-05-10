@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/mac-reichelt/tuning-coach/compare/sidecar-v0.1.4...sidecar-v0.1.5) (2026-05-10)
+
+
+### Features
+
+* **overlay:** add SimHub-importable overlay bundle and install docs ([#87](https://github.com/mac-reichelt/tuning-coach/issues/87)) ([c6e66bf](https://github.com/mac-reichelt/tuning-coach/commit/c6e66bf38ee2c3c1a2db7c5d5c246a04210e4c96))
+
 ## [0.1.4](https://github.com/mac-reichelt/tuning-coach/compare/sidecar-v0.1.3...sidecar-v0.1.4) (2026-04-26)
 
 
