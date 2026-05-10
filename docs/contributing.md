@@ -1,10 +1,14 @@
-# Contributing Guide
+# Contributing
 
-This project uses agent-based review workflows to ensure quality, security, and correctness. Follow these steps to contribute effectively:
+Welcome! This project uses agent-driven review workflows to ensure code quality, security, and correctness. Before you start, please read the agent routing matrix and review workflow details below.
 
 ## Agent Routing Matrix
 
-Before you start, identify which agent(s) you must consult based on the files you plan to change. Read the relevant agent files and reference them in your PR description.
+Before implementing any changes, identify which agents match the files you plan to touch using the routing matrix below. Read those agent files before writing code, and note them in your PR description as:
+
+```
+Consulted: <agent-name> per routing matrix
+```
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -12,20 +16,14 @@ Before you start, identify which agent(s) you must consult based on the files yo
 | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice + correct telemetry semantics |
 | `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
 | `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
-| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security |
+| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security (covered by devops-review.yml and security-review.yml) |
 | Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-**Example PR description note:**
-
-```
-Consulted: race-engineer, telemetry-expert per routing matrix
-```
-
 ## Automated Review Workflows
 
-The following review workflows run automatically based on the files you change:
+Four path-scoped review workflows enforce this matrix on every PR:
 
 | Workflow | Check name | In-scope when |
 |---|---|---|
@@ -34,34 +32,15 @@ The following review workflows run automatically based on the files you change:
 | `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
 | `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
 
-Out-of-scope PRs post a passing check so branch protection is not blocked.
+All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
 
-## Coding Standards
+## How to Contribute
 
-- Follow agent conventions for your area.
-- Write tests for new public interfaces.
-- Update documentation as needed.
+1. **Fork and clone** the repository.
+2. **Identify agent(s)** using the routing matrix above.
+3. **Consult agent files** as required.
+4. **Make your changes** and commit.
+5. **Open a PR**. In your PR description, note which agent(s) you consulted.
+6. **Review workflows** will run automatically and post verdicts.
 
-## Submitting a PR
-
-1. Fork and branch.
-2. Make your changes.
-3. Run tests and lint.
-4. Update docs if needed.
-5. Reference consulted agent(s) in your PR description.
-6. Submit your PR.
-
-## Review Process
-
-- Automated agent reviews will run.
-- Address agent and maintainer feedback.
-- Merge once all checks pass.
-
-## More Information
-
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — quickstart
-- [docs/adr/README.md](adr/README.md) — architecture decisions
-
-## License
-
-See [LICENSE](../LICENSE).
+For more details, see [CONTRIBUTING.md](../CONTRIBUTING.md).
