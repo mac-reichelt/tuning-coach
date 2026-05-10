@@ -18,7 +18,10 @@ name: tech-writer
 #     repo root, and paths outside the docs/+root-md allowlist.
 #   - LLM-controlled strings are passed to bash via `env:`, never interpolated
 #     into `run:` bodies via `${{ }}`.
-#   - PR diff is truncated to 200KB before being sent to the LLM.
+#   - PR diff is truncated to MAX_DIFF_BYTES (~25 KB) before being sent to the
+#     LLM, and the assembled request body is bailed out to APPROVE if it
+#     exceeds ~90 KB to stay under the GitHub Models free-tier 8K-token input
+#     budget.
 
 on:
   pull_request:
@@ -127,9 +130,13 @@ jobs:
         id: llm
         run: |
           set -euo pipefail
-          # Belt-and-suspenders: if the assembled request is too large for the
-          # GitHub Models input budget (~32 KB safe ceiling for free tier),
-          # short-circuit to APPROVE rather than 413.
+          # Belt-and-suspenders: if the assembled JSON request body exceeds
+          # ~90 KB, short-circuit to APPROVE rather than risk a 413 from the
+          # GitHub Models endpoint. The 90 KB cutoff is empirical: the free-tier
+          # 8K-token input limit corresponds to ~32 KB of plain text, but the
+          # JSON-escaped request body is roughly 2.5-3x larger once diff,
+          # corpus, and system prompt are encoded, so 90 KB is the largest
+          # observed safe payload before the endpoint starts rejecting.
           REQ_BYTES=$(wc -c < /tmp/tw-req.json)
           if [ "$REQ_BYTES" -gt 90000 ]; then
             echo "::warning::Request body ${REQ_BYTES} bytes exceeds LLM budget; defaulting to APPROVE"
