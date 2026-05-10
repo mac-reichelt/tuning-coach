@@ -4,65 +4,66 @@ Thank you for your interest in contributing! This project uses agent-driven revi
 
 ## Getting Started
 
-1. **Fork the repository** and clone your fork.
+1. **Fork and clone** the repository.
 2. **Create a new branch** for your changes:
    ```bash
    git checkout -b my-feature
    ```
 3. **Make your changes** and commit them with clear, conventional commit messages.
 
-## Agent Review Checks
+## Agent Routing and Review Checks
 
-Every pull request triggers automated agent reviews based on the files you change. These checks are enforced by GitHub Actions and must pass before your PR can be merged:
-
-- **agent-review**: General code review.
-- **devops-review**: CI/CD and workflow changes.
-- **security-review**: Security-sensitive files or workflows.
-- **telemetry-review**: Telemetry schema and related files.
-- **heuristics-review**: Tuning logic and recommendations.
-- **qa-review**: Ensures test coverage for source changes.
-
-### Routing Matrix
-
-Before implementing changes, consult the relevant agent(s) based on the files you plan to touch. See [Agent Routing](.github/copilot-instructions.md#agent-routing) for details.
+Before implementing changes, consult the agent routing matrix to determine which agent files you must read and reference in your PR description. The routing matrix is documented in [`.github/copilot-instructions.md`](.github/copilot-instructions.md) and summarized below:
 
 | Path glob | Agent(s) to consult before editing |
 |---|---|
-| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | telemetry-expert |
-| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | race-engineer + telemetry-expert |
-| `sidecar/src/storage*.rs`, `sidecar/migrations/**` | architect |
-| `docs/adr/**` (new files) | architect |
-| `.github/workflows/**`, `.github/actions/**` | devops-engineer + security-review |
-| Any file with auth, secrets, OIDC, crypto | security-review |
-| New crates, new public modules, new sidecar tests | qa-engineer |
-| `overlay/**` (logic changes, not pure CSS) | qa-engineer |
+| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` |
+| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` |
+| `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` |
+| `docs/adr/**` (new files) | `architect` |
+| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` |
+| Any file with auth, secrets, OIDC, crypto in name or context | `security-review` |
+| New crates, new public modules, new sidecar tests | `qa-engineer` |
+| `overlay/**` (logic changes, not pure CSS) | `qa-engineer` |
 
-### Automated Checks
+### Automated Review Workflows
 
-The following workflows enforce the routing matrix:
+The following agent-driven review checks run automatically on every PR:
 
-- `.github/workflows/security-review.yml`
-- `.github/workflows/qa-review.yml`
-- `.github/workflows/telemetry-review.yml`
-- `.github/workflows/heuristics-review.yml`
+- **security-review**: Security-sensitive changes
+- **qa-review**: Source changes without accompanying tests
+- **telemetry-review**: Telemetry schema and expert logic
+- **heuristics-review**: Tuning logic and recommendations
 
-Out-of-scope PRs post a passing check so unrelated work is not blocked.
+Out-of-scope PRs are auto-approved by these checks. In-scope PRs require agent review and approval before merge.
 
-## Submitting a Pull Request
+## PR Description Requirements
 
-1. **Push your branch** to your fork.
-2. **Open a pull request** against the main repository.
-3. **Describe your changes** clearly. If you consulted agent files per the routing matrix, note them in your PR description (e.g., `Consulted: race-engineer per routing matrix`).
-4. **Wait for agent review checks** to complete. Address any feedback.
+- **Reference consulted agent files** in your PR description, e.g.:
+  ```
+  Consulted: race-engineer.agent.md per routing matrix
+  ```
+- **Describe your changes** and rationale.
+- **Link related issues** if applicable.
+
+## Running Tests
+
+Run all tests before submitting:
+```bash
+cargo test
+# For overlay:
+npm test
+```
 
 ## Documentation
 
-If your changes affect user-facing behavior, update the relevant documentation:
+If your change affects user-facing behavior, update the relevant docs in `/docs/`, `README.md`, or ADRs as needed.
 
-- [README.md](README.md)
-- [docs/](docs/)
-- [docs/contributing.md](docs/contributing.md)
+## Code Style
+
+- Follow Rust and TypeScript formatting conventions.
+- Use conventional commit messages.
 
 ## License
 
-By contributing, you agree that your code will be released under the project's license.
+By submitting code, you agree it can be released under the project license.
