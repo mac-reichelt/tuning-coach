@@ -27,7 +27,10 @@ Sled-only and 311-byte legacy Dash formats are also accepted for compatibility
 with older titles (FH4, FH5, FM7). **Length is the discriminator** — always
 check `buf.len()` first; never assume a fixed size.
 
-### Packet structure (bytes 0–311: Sled + Dash extension)
+### Packet structure (bytes [0,311): Sled + Dash extension)
+
+Offset ranges below use **half-open byte intervals**: `[start, end)`. The
+length of a field is `end - start`. So `0–4` means bytes 0, 1, 2, 3 (an `i32`).
 
 | Offset | Type | Field | Notes |
 |--------|------|-------|-------|

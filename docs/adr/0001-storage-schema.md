@@ -276,12 +276,12 @@ PRAGMA temp_store = MEMORY;
 
 ### Negative
 
-- **Storage cost.** A 1-hour active session is ~7.2 MB of raw packets
-  (~331 B × 60 Hz × 3600 s for FM 2023; ~6.7 MB for legacy 311-byte packets)
+- **Storage cost.** A 1-hour active session is ~71.5 MB of raw packets
+  (~331 B × 60 Hz × 3600 s for FM 2023; ~67.2 MB for legacy 311-byte packets)
   plus ~10–15 MB for the row overhead and denormalized columns and indexes —
-  call it **~20 MB/hour active**. A heavy weekend (~10 hours) is ~200 MB.
-  Acceptable for a desktop app; we'll add a retention setting before 1.0
-  (open question, deferred).
+  call it **~80–87 MB/hour active**. A heavy weekend (~10 hours) is
+  **~0.8–0.9 GB**. Acceptable for a desktop app; we'll add a retention
+  setting before 1.0 (open question, deferred).
 - **Querying non-indexed packet fields requires reparsing.** Acceptable: those
   queries are post-session/replay paths, not hot.
 - **JSON-in-SQL** loses static schema guarantees. Mitigated with strict
@@ -385,8 +385,8 @@ columns + row overhead, ~50% index overhead on the indexed columns.
 
 | Workload | Raw bytes | With indexes | Per session (~30 min) | Per heavy week (~10 h) |
 |---|---|---|---|---|
-| Telemetry only | ~22 MB/h | ~30 MB/h | ~15 MB | ~300 MB |
-| + recommendations + laps + hotkeys | +<1 MB/h | +<1 MB/h | ~16 MB | ~310 MB |
+| Telemetry only | ~71.5 MB/h | ~85 MB/h | ~43 MB | ~850 MB |
+| + recommendations + laps + hotkeys | +<1 MB/h | +<1 MB/h | ~44 MB | ~860 MB |
 
 Order of magnitude: a serious user generates **GB-scale data per year**. We
 will introduce a configurable retention policy (open question in PLAN.md)
