@@ -1,46 +1,50 @@
-# Contributing
+# Contributing Guide
 
-Welcome! This project uses agent-driven review workflows to ensure code quality, security, and correctness. Before you start, please read the agent routing matrix and review workflow details below.
+This project uses agent-driven review workflows to ensure quality and correctness. Please follow these steps when contributing:
 
-## Agent Routing Matrix
+## Steps
 
-Before implementing any changes, identify which agents match the files you plan to touch using the routing matrix below. Read those agent files before writing code, and note them in your PR description as:
+1. **Fork and clone the repository**
+2. **Create a feature branch**
+3. **Make your changes**
+4. **Write conventional commit messages**
+5. **Push and open a pull request**
 
-```
-Consulted: <agent-name> per routing matrix
-```
+## Agent-Driven Review Workflows
 
-| Path glob | Agent(s) to consult before editing | Rationale |
+Automated agent reviews cover key areas:
+
+- **Security**: Checks for workflow, shell, and security-sensitive changes
+- **DevOps**: Checks for CI/CD and workflow changes
+- **QA**: Checks for source changes without corresponding tests
+- **Telemetry**: Checks for telemetry schema changes
+- **Heuristics**: Checks for tuning logic changes
+
+All workflows use skip-success: out-of-scope PRs post `success` so checks can be required without blocking unrelated work.
+
+### Agent Routing Matrix
+
+Consult the relevant agent(s) before editing files:
+
+| Path glob | Agent(s) to consult | Rationale |
 |---|---|---|
-| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` | Packet schema is the source of truth; agent file must stay in sync with code |
-| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice + correct telemetry semantics |
+| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` | Packet schema must stay in sync |
+| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice |
 | `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
-| `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
-| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security (covered by devops-review.yml and security-review.yml) |
-| Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
+| `docs/adr/**` (new files) | `architect` | New ADRs need review |
+| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security |
+| Any file with auth, secrets, OIDC, crypto | `security-review` | Security review |
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
-| `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
+| `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline |
 
-## Automated Review Workflows
+See `.github/copilot-instructions.md` for full details.
 
-Four path-scoped review workflows enforce this matrix on every PR:
+## Checklist
 
-| Workflow | Check name | In-scope when |
-|---|---|---|
-| `.github/workflows/security-review.yml` | `security-review verdict` | Workflow/action files, shell scripts, or security-sensitive file names change |
-| `.github/workflows/qa-review.yml` | `qa-review verdict` | `sidecar/src/**` or `overlay/**` changes without accompanying test-file changes |
-| `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
-| `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
+- [ ] Conventional commit message
+- [ ] Consulted relevant agent(s)
+- [ ] Added/updated tests
+- [ ] Updated docs if needed
 
-All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
-
-## How to Contribute
-
-1. **Fork and clone** the repository.
-2. **Identify agent(s)** using the routing matrix above.
-3. **Consult agent files** as required.
-4. **Make your changes** and commit.
-5. **Open a PR**. In your PR description, note which agent(s) you consulted.
-6. **Review workflows** will run automatically and post verdicts.
-
-For more details, see [CONTRIBUTING.md](../CONTRIBUTING.md).
+## License
+SPDX identifier — see [LICENSE](../LICENSE).

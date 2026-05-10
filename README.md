@@ -1,20 +1,19 @@
-# Tuning Coach — AI-powered race engineering for Forza
+# <Project> — <one-line tagline>
 
-Tuning Coach automates telemetry-driven tuning advice for Forza, using real-world race engineering heuristics. It integrates with SimHub overlays and supports agent-driven code review workflows.
+<2–3 sentence what + why. Hero screenshot/GIF if visual.>
 
 ## Features
-- ✅ Real-time telemetry parsing and tuning recommendations
-- ✅ SimHub overlay integration
-- ✅ Agent-driven review workflows for CI/CD, security, QA, and heuristics
+- ✅ <feature> — <one-line>
+- ✅ <feature> — <one-line>
 
 ## Quickstart
 
+<5 minutes from clone to running. Exact commands.>
+
 ```bash
-git clone https://github.com/<your-org>/tuning-coach.git
-cd tuning-coach
-# Build and run the sidecar
-cargo build --release
-./target/release/sidecar
+git clone ...
+cd ...
+<run command>
 ```
 
 ## Documentation
@@ -24,15 +23,10 @@ cargo build --release
 - [Contributing](docs/contributing.md)
 
 ## Status
-| Feature                | Status   |
-|------------------------|----------|
-| Telemetry parsing      | Stable   |
-| Tuning heuristics      | Beta     |
-| SimHub overlay         | Stable   |
-| Agent review workflows | Beta     |
+<table or paragraph: which features are stable, beta, planned>
 
 ## Contributing
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/contributing.md](docs/contributing.md) for agent routing and review workflow details.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for agent-driven review workflows and the agent routing matrix.
 
 ## License
-MIT — see [LICENSE](LICENSE).
+<SPDX identifier> — see [LICENSE](LICENSE).

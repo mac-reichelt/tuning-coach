@@ -1,10 +1,41 @@
 # Contributing
 
-Thank you for your interest in improving Tuning Coach! This project uses agent-driven review workflows to ensure quality and correctness. Please follow these steps:
+Thank you for your interest in contributing! This project uses agent-driven review workflows to ensure code quality, security, and correctness. Please read this guide before opening a pull request.
 
-## 1. Agent Routing Matrix
+## Getting Started
 
-Before making changes, check which agent(s) you need to consult based on the files you plan to edit. See the routing matrix below:
+1. **Fork the repository**
+2. **Clone your fork**
+   ```bash
+   git clone https://github.com/<your-username>/<repo-name>.git
+   cd <repo-name>
+   ```
+3. **Create a new branch**
+   ```bash
+   git checkout -b <feature-or-bugfix-name>
+   ```
+4. **Make your changes**
+5. **Commit with a conventional commit message**
+   ```bash
+   git commit -m "feat: add new telemetry parser"
+   ```
+6. **Push and open a pull request**
+
+## Agent-Driven Review Workflows
+
+This project uses automated agent reviews for key areas:
+
+- **Security**: `.github/workflows/security-review.yml` — triggers on changes to workflow/action files, shell scripts, or security-sensitive files.
+- **DevOps**: `.github/workflows/devops-review.yml` — triggers on CI/CD and workflow changes.
+- **QA**: `.github/workflows/qa-review.yml` — triggers when source files change without corresponding test changes.
+- **Telemetry**: `.github/workflows/telemetry-review.yml` — triggers on telemetry schema or expert agent file changes.
+- **Heuristics**: `.github/workflows/heuristics-review.yml` — triggers on tuning logic or race-engineer agent file changes.
+
+All workflows use the skip-success pattern: out-of-scope PRs post `success` so checks can be required without blocking unrelated work.
+
+### Agent Routing Matrix
+
+Before implementing changes, consult the relevant agent(s) based on the files you plan to touch:
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -17,24 +48,21 @@ Before making changes, check which agent(s) you need to consult based on the fil
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-## 2. Automated Review Workflows
+See `.github/copilot-instructions.md` for full details.
 
-The following workflows enforce agent review on every PR:
+## PR Checklist
 
-- `.github/workflows/security-review.yml` — Security-sensitive changes
-- `.github/workflows/qa-review.yml` — Source changes without test changes
-- `.github/workflows/telemetry-review.yml` — Telemetry schema and expert review
-- `.github/workflows/heuristics-review.yml` — Tuning logic and heuristics review
+- [ ] Conventional commit message
+- [ ] Consulted relevant agent(s) per routing matrix
+- [ ] Added/updated tests for new public functions
+- [ ] Updated documentation if needed
 
-Out-of-scope PRs post a passing check so branch protection is not blocked.
+## Documentation
 
-## 3. Steps to Contribute
+- [Getting Started](docs/getting-started.md)
+- [API Reference](docs/reference/api.md)
+- [Contributing](docs/contributing.md)
 
-1. **Fork and clone** the repository.
-2. **Identify agent(s)** using the routing matrix.
-3. **Consult agent files** as required.
-4. **Make your changes** and commit.
-5. **Open a PR**. In your PR description, note which agent(s) you consulted.
-6. **Review workflows** will run automatically and post verdicts.
+## License
 
-For more details, see [docs/contributing.md](docs/contributing.md).
+SPDX identifier — see [LICENSE](LICENSE).
