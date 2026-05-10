@@ -1,14 +1,28 @@
-# Contributing
+# Contributing Guide
 
-Welcome! This project uses agent-driven review and automated CI checks to ensure code quality and domain correctness. Before you start, please read this guide and the [CONTRIBUTING.md](../CONTRIBUTING.md) file in the repo root.
+Welcome! This project uses a multi-agent review system to ensure quality and correctness. Please follow these steps when contributing.
 
-## Agent Routing Matrix
+## Workflow
 
-Before implementing any changes, identify which agents match the files you plan to touch using the routing matrix below. Read those agent files before writing code, and note them in your PR description as:
+1. **Fork and clone**
+2. **Create a branch**
+3. **Make changes**
+4. **Commit and push**
+5. **Open a pull request**
 
-```
-Consulted: <agent-name> per routing matrix
-```
+## Agent Review System
+
+Automated agent reviews check your PR for correctness, security, and test coverage. The following agent workflows are used:
+
+- **Devops/CI**: `.github/workflows/devops-review.yml` (devops-engineer agent)
+- **Security**: `.github/workflows/security-review.yml` (security-review agent)
+- **Telemetry**: `.github/workflows/telemetry-review.yml` (telemetry-expert agent)
+- **Heuristics/Tuning Logic**: `.github/workflows/heuristics-review.yml` (race-engineer agent)
+- **QA/Test Coverage**: `.github/workflows/qa-review.yml` (qa-engineer agent)
+
+### Agent Routing Matrix
+
+Before making changes, check which agent(s) you need to consult based on the files you plan to edit:
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -16,14 +30,14 @@ Consulted: <agent-name> per routing matrix
 | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice + correct telemetry semantics |
 | `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
 | `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
-| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security (covered by devops-review.yml and security-review.yml) |
+| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security |
 | Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-## Automated Review Workflows
+### Automated Routing
 
-Four path-scoped review workflows enforce this matrix on every PR:
+Agent review workflows are triggered automatically based on the files you change. Out-of-scope PRs post a passing check so branch protection is not blocked.
 
 | Workflow | Check name | In-scope when |
 |---|---|---|
@@ -32,27 +46,26 @@ Four path-scoped review workflows enforce this matrix on every PR:
 | `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
 | `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
 
-All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
+## Commit Messages
 
-## PR Description Format
+Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
-Your PR description must include which agent files you consulted, e.g.:
+## Tests
 
-```
-Consulted: race-engineer.agent.md, telemetry-expert.agent.md per routing matrix
-```
+- Add tests for new public functions or modules.
+- QA agent will check for missing tests.
 
-## Procedural Steps
+## Documentation
 
-1. **Identify affected files and agents.**
-2. **Consult agent files as per routing matrix.**
-3. **Write code and tests.**
-4. **Document changes as needed.**
-5. **Open PR with agent consultation noted.**
-6. **Automated review workflows will run and post verdicts.**
+- Update docs for new features or changes.
+- Cross-link new concepts.
 
-## Additional Guidance
+## Opening a PR
 
-- See [CONTRIBUTING.md](../CONTRIBUTING.md) for full onboarding steps, code style, and test requirements.
-- For architecture decisions, see [docs/adr/](adr/README.md).
-- For API reference, see [docs/reference/api.md](reference/api.md).
+- Fill out the PR template.
+- Note which agent(s) you consulted per the routing matrix.
+- Ensure all required checks pass.
+
+## License
+
+By contributing, you agree your code will be released under the project's license.
