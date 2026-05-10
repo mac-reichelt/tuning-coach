@@ -1,19 +1,25 @@
 # Contributing
 
-Thank you for your interest in contributing! This project uses agent-driven review workflows to ensure code quality and domain correctness. Please follow these steps when submitting a pull request:
+Thank you for your interest in contributing! This project uses agent-driven review workflows to ensure code quality, security, and correctness. Please follow these steps to get started:
 
-## Workflow Overview
+## Getting Started
 
-- **Agent Routing:** Before making changes, identify which agent(s) match the files you plan to touch. Consult the agent files as described below.
-- **Automated Review Checks:** Four path-scoped review workflows enforce agent review on every PR:
-  - `security-review.yml` — Security-sensitive files, workflows, or auth logic
-  - `qa-review.yml` — Source changes without accompanying test changes
-  - `telemetry-review.yml` — Telemetry schema or expert agent changes
-  - `heuristics-review.yml` — Heuristics/recommendations logic or race-engineer agent changes
+1. **Fork the repository**
+2. **Clone your fork**
 
-All four checks use the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
+   ```bash
+   git clone https://github.com/<your-username>/<repo-name>.git
+   cd <repo-name>
+   ```
+3. **Create a new branch**
+
+   ```bash
+   git checkout -b <feature-or-fix-name>
+   ```
 
 ## Agent Routing Matrix
+
+Before making changes, consult the relevant agent(s) based on the files you plan to edit. The agent routing matrix ensures that subject-matter experts review changes in their domain.
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -26,32 +32,47 @@ All four checks use the skip-success pattern: out-of-scope PRs post `success` so
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-## How to Contribute
+**Note:** Mention consulted agents in your PR description as:
 
-1. **Fork the repository**
-2. **Clone your fork**
-3. **Create a new branch**
-4. **Make your changes**
-5. **Consult agent files as per the routing matrix**
-6. **Open a pull request**
-   - Note consulted agents in your PR description: `Consulted: <agent-name> per routing matrix.`
-7. **Wait for agent review checks to complete**
+```
+Consulted: <agent-name> per routing matrix
+```
 
-## Running Tests
+## Automated Review Workflows
 
-- **Rust:**
-  ```bash
-  cargo test
-  ```
-- **Overlay (JS):**
-  ```bash
-  npm test
-  ```
+The following GitHub Actions enforce agent review checks:
 
-## Documentation
+- `.github/workflows/security-review.yml` — Security-sensitive changes
+- `.github/workflows/qa-review.yml` — Source changes without test updates
+- `.github/workflows/telemetry-review.yml` — Telemetry schema/logic changes
+- `.github/workflows/heuristics-review.yml` — Heuristics/tuning logic changes
+- `.github/workflows/devops-review.yml` — CI/CD and workflow changes
+- `.github/workflows/agent-review.yml` — General agent review
 
-See [docs/contributing.md](docs/contributing.md) for more details.
+Each workflow posts a verdict (`APPROVE`, `REQUEST_CHANGES`, or `COMMENT`) and must pass for your PR to merge.
+
+## Making a Change
+
+1. **Write code and tests**
+2. **Update documentation** if needed
+3. **Push your branch**
+
+   ```bash
+   git push origin <feature-or-fix-name>
+   ```
+4. **Open a Pull Request**
+   - Fill out the PR template
+   - Note which agents you consulted
+   - Ensure all required checks pass
+
+## Style Guide
+
+- Use active voice and present tense
+- Write instructions in second person
+- Show real output and code snippets
+- Use headings, bullets, and tables for clarity
+- Link to definitions and reference docs
 
 ## License
 
-SPDX: MIT — see [LICENSE](LICENSE).
+SPDX identifier: [LICENSE](LICENSE)

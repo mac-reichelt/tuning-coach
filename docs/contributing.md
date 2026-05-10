@@ -1,12 +1,10 @@
 # Contributing Guide
 
-This project uses agent-driven review workflows to ensure code quality and domain correctness. Please follow these guidelines when contributing:
+Welcome! This project uses agent-driven review workflows to ensure quality and correctness. Please read this guide before submitting changes.
 
-## Agent Routing and Review
+## Agent Routing Matrix
 
-Before implementing changes, identify which agent(s) match the files you plan to touch using the routing matrix below. Consult the relevant agent files before writing code, and note them in your PR description.
-
-### Routing Matrix
+Before you start, identify which agents match the files you plan to touch. Consult the relevant agent(s) and note them in your PR description.
 
 | Path glob | Agent(s) to consult before editing | Rationale |
 |---|---|---|
@@ -19,37 +17,39 @@ Before implementing changes, identify which agent(s) match the files you plan to
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
 | `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
 
-### Automated Review Checks
+## Automated Review Workflows
 
-Four path-scoped review workflows enforce this matrix on every PR:
+The following workflows enforce agent review checks:
 
-- `security-review.yml` — Security-sensitive files, workflows, or auth logic
-- `qa-review.yml` — Source changes without accompanying test changes
-- `telemetry-review.yml` — Telemetry schema or expert agent changes
-- `heuristics-review.yml` — Heuristics/recommendations logic or race-engineer agent changes
+- `.github/workflows/security-review.yml` — Security-sensitive changes
+- `.github/workflows/qa-review.yml` — Source changes without test updates
+- `.github/workflows/telemetry-review.yml` — Telemetry schema/logic changes
+- `.github/workflows/heuristics-review.yml` — Heuristics/tuning logic changes
+- `.github/workflows/devops-review.yml` — CI/CD and workflow changes
+- `.github/workflows/agent-review.yml` — General agent review
 
-All four follow the skip-success pattern: out-of-scope PRs post `success` so the checks can be required in branch protection without blocking unrelated work.
+Each workflow posts a verdict and must pass for your PR to merge.
 
-## Steps to Contribute
+## How to Contribute
 
-1. **Fork and clone the repository**
-2. **Create a new branch**
-3. **Make your changes**
-4. **Consult agent files as per the routing matrix**
-5. **Open a pull request**
-   - Note consulted agents in your PR description: `Consulted: <agent-name> per routing matrix.`
-6. **Wait for agent review checks to complete**
+1. Fork and clone the repository
+2. Create a new branch
+3. Make your changes
+4. Update documentation as needed
+5. Push your branch
+6. Open a Pull Request
+   - Fill out the PR template
+   - Note which agents you consulted
+   - Ensure all required checks pass
 
-## Running Tests
+## Style Guide
 
-- **Rust:**
-  ```bash
-  cargo test
-  ```
-- **Overlay (JS):**
-  ```bash
-  npm test
-  ```
+- Use active voice and present tense
+- Write instructions in second person
+- Show real output and code snippets
+- Use headings, bullets, and tables for clarity
+- Link to definitions and reference docs
 
 ## License
-MIT — see [LICENSE](../LICENSE).
+
+SPDX identifier: [LICENSE](../LICENSE)

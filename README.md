@@ -1,37 +1,38 @@
-# Tuning Coach — Real-time race engineering for Forza
+# <Project> — <one-line tagline>
 
-Tuning Coach analyzes telemetry and recommends chassis setup changes in real time. It uses agent-driven review workflows to ensure correctness and quality.
+<2–3 sentence what + why. Hero screenshot/GIF if visual.>
 
 ## Features
-- ✅ Real-time telemetry parsing
-- ✅ Automated tuning recommendations
-- ✅ Agent-driven review for code, heuristics, and security
+- ✅ Agent-driven review workflows for code, security, QA, and tuning logic
+- ✅ Automated agent routing matrix ensures subject-matter expert review
 
 ## Quickstart
+
+<5 minutes from clone to running. Exact commands.>
 
 ```bash
 git clone ...
 cd ...
-cargo build
-# See docs/getting-started.md for overlay setup
+<run command>
 ```
 
 ## Documentation
 - [Getting Started](docs/getting-started.md)
 - [Configuration](docs/configuration.md)
 - [API Reference](docs/reference/api.md)
-- [Contributing](CONTRIBUTING.md)
 
 ## Status
-| Feature | Status |
-|---------|--------|
-| Telemetry parsing | Stable |
-| Tuning heuristics | Beta |
-| Overlay | Beta |
-| Agent review workflows | Stable |
+<table>
+<tr><th>Feature</th><th>Status</th></tr>
+<tr><td>Agent review workflows</td><td>Stable</td></tr>
+<tr><td>Routing matrix enforcement</td><td>Stable</td></tr>
+<tr><td>Telemetry schema</td><td>Beta</td></tr>
+<tr><td>Tuning heuristics</td><td>Beta</td></tr>
+</table>
 
 ## Contributing
-See [CONTRIBUTING.md](CONTRIBUTING.md) for agent routing and review process.
+
+This project uses agent-driven review workflows. See [CONTRIBUTING.md](CONTRIBUTING.md) for details on the agent routing matrix and required checks.
 
 ## License
-MIT — see [LICENSE](LICENSE).
+<SPDX identifier> — see [LICENSE](LICENSE).
