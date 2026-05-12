@@ -37,6 +37,46 @@ async fn sidecar_health_endpoint_returns_ok() {
     assert_eq!(body, serde_json::json!({ "status": "ok" }));
 }
 
+#[tokio::test]
+async fn sidecar_root_serves_overlay_html() {
+    let ws_port = find_free_port();
+    let udp_port = find_free_port();
+    let _sidecar = SidecarProcessGuard {
+        child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
+            .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
+            .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
+            .spawn()
+            .expect("sidecar should start"),
+    };
+
+    let health_url = format!("http://127.0.0.1:{ws_port}/health");
+    let client = reqwest::Client::new();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        match client.get(&health_url).send().await {
+            Ok(response) if response.status().is_success() => break,
+            Ok(_) | Err(_) if Instant::now() < deadline => sleep(Duration::from_millis(100)).await,
+            Ok(response) => panic!("health endpoint not ready: status {}", response.status()),
+            Err(err) => panic!("health endpoint never became available: {err}"),
+        }
+    }
+
+    let root_url = format!("http://127.0.0.1:{ws_port}/");
+    let response = client.get(&root_url).send().await.expect("root request");
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert!(content_type.starts_with("text/html"));
+
+    let body = response.text().await.expect("root html body");
+    assert!(body.contains("id=\"connection-status\""));
+}
+
 fn find_free_port() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind free local port");
     listener.local_addr().expect("local addr").port()

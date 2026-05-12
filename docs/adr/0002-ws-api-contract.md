@@ -44,7 +44,7 @@ the `axum` + `tokio::sync::broadcast` stack already chosen for the sidecar.
 ## Decision
 
 We will expose a single WebSocket endpoint at `ws://127.0.0.1:<port>/ws`
-(default port `38920`, configurable). The server binds to `127.0.0.1` by
+(default port `7778`, configurable). The server binds to `127.0.0.1` by
 default and only binds to `0.0.0.0` when an explicit opt-in config flag is
 set, in which case it logs a warning at startup. There is no authentication
 at v1 — the API surface is local-only.
@@ -60,10 +60,10 @@ below and frozen at `schema_version: 1`. Incompatible changes bump
 | Property            | Value                                                   |
 |---------------------|---------------------------------------------------------|
 | Scheme              | `ws://` (no TLS — local loopback)                       |
-| Default bind        | `127.0.0.1:38920`                                       |
-| Bind override       | config key `ws.bind` (env: `TUNING_COACH_WS_BIND`)      |
+| Default bind        | `127.0.0.1:7778`                                        |
+| Bind override       | config key `ws_listen_port` (env: `TUNING_COACH_WS_LISTEN_PORT`) |
 | Path                | `/ws`                                                   |
-| Subprotocol         | `tuning-coach.v1` (optional in current implementation)   |
+| Subprotocol         | `tuning-coach.v1` (echoed when requested)               |
 | Frame type          | Text frames only; binary frames rejected                |
 | Encoding            | UTF-8 JSON, one envelope per frame                      |
 | Max frame size      | 64 KiB (server-enforced; closes with 1009 if exceeded)  |
@@ -156,8 +156,9 @@ cleanly without coupling the two queues.
 
 - `schema_version` is an integer monotonically increasing per breaking change.
 - The subprotocol string (`tuning-coach.v1`) carries the *major* version.
-  Subprotocol enforcement is deferred; current implementation accepts clients
-  without explicit subprotocol negotiation.
+  Clients may connect without subprotocol negotiation, but when a client sends
+  `Sec-WebSocket-Protocol: tuning-coach.v1`, the server echoes that value in
+  the upgrade response.
 - Once upgraded, if the client's first non-`hello` frame carries a different
   `schema_version`, the server closes with code **`4001`** and reason
   `"schema_version mismatch: server=N client=M"`.
@@ -496,7 +497,7 @@ most recent parsed packet, regardless of the client's downsample rate.
 
 - Loopback bind is the default; `0.0.0.0` requires explicit opt-in and logs
   a warning. Most users will never touch this.
-- The default port `38920` is arbitrary; configurable. If it conflicts with
+- The default port `7778` is arbitrary; configurable. If it conflicts with
   another tool, the user changes it in config.
 - Tire-temp unit conversion happens at the WS boundary, not in the parser.
   Parser stays faithful to the source spec; presentation does the conversion.

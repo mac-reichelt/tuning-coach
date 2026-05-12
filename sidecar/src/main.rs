@@ -39,6 +39,7 @@ use tracing_subscriber::EnvFilter;
 
 mod hotkeys;
 mod lap_validity;
+mod overlay;
 mod recommendation;
 mod session_state;
 mod storage;
@@ -391,6 +392,9 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
     };
 
     let app = Router::new()
+        .route("/", get(overlay::index))
+        .route("/src/{*path}", get(overlay::src_asset))
+        .route("/styles/{*path}", get(overlay::styles_asset))
         .route("/health", get(health))
         .route("/ws", get(ws_handler))
         .route("/test/telemetry", post(test_emit_telemetry))
@@ -553,7 +557,8 @@ async fn health() -> impl IntoResponse {
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| ws_connection_loop(socket, state))
+    ws.protocols(["tuning-coach.v1"])
+        .on_upgrade(move |socket| ws_connection_loop(socket, state))
 }
 
 async fn ws_connection_loop(mut socket: WebSocket, state: AppState) {

@@ -3,7 +3,7 @@
  *
  * Usage:
  *   import { WsClient } from './ws-client.js';
- *   const client = new WsClient('ws://127.0.0.1:38920/ws');
+ *   const client = new WsClient('ws://127.0.0.1:7778/ws');
  *   client.addEventListener('telemetry', (ev) => { ... });
  *   client.connect();
  */
@@ -24,6 +24,11 @@ const PING_INTERVAL_MS = 25_000;
  * connected successfully, transition to the 'down' state (still retrying).
  */
 const DOWN_THRESHOLD = 5;
+
+function resolveDefaultWsUrl() {
+  const params = new URLSearchParams(location.search);
+  return params.get('ws') ?? `ws://${location.host}/ws`;
+}
 
 export class WsClient extends EventTarget {
   /** @type {string} */
@@ -54,9 +59,9 @@ export class WsClient extends EventTarget {
   #failCount = 0;
 
   /**
-   * @param {string} url  WebSocket URL (e.g. 'ws://127.0.0.1:38920/ws')
+   * @param {string} url  WebSocket URL (e.g. 'ws://127.0.0.1:7778/ws')
    */
-  constructor(url) {
+  constructor(url = resolveDefaultWsUrl()) {
     super();
     this.#url = url;
   }
