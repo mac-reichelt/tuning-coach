@@ -1,32 +1,53 @@
-# Tuning Coach — Real-time Racing Telemetry & Setup Guidance
+# Tuning Coach — Live telemetry HUD + tuning recommendations for Forza Motorsport
 
-Tuning Coach helps you optimize your car setup with live telemetry, actionable recommendations, and seamless SimHub overlay integration.
+Tuning Coach connects to Forza Motorsport (PC) and surfaces actionable tuning advice, live telemetry, and lap validity. The SimHub overlay is now served directly from the sidecar HTTP endpoint—no separate static file server or overlay bundle required.
 
-![Tuning Coach overlay screenshot](docs/assets/overlay-screenshot.png)
+![Overlay screenshot](docs/img/overlay-screenshot.png)
 
 ## Features
-- ✅ Real-time telemetry parsing and analysis
-- ✅ SimHub-importable overlay bundle for instant dashboards
-- ✅ Actionable setup recommendations
+- ✅ Live telemetry HUD — speed, gear, RPM, throttle/brake, steering, lap clock
+- ✅ Lap-status badge — valid/dirty/pit/reset/out lap
+- ✅ Recommendation slot — tuning advice (Phase 7+)
+- ✅ SimHub overlay — served directly from sidecar HTTP endpoint
 
 ## Quickstart
 
-Get up and running in 5 minutes:
+**Prerequisites:**
+- [Rust](https://rustup.rs/) 1.80+
+- SimHub 9.0+
+- Forza Motorsport (PC)
+
+**Build and run the sidecar:**
 
 ```bash
-git clone https://github.com/mac-reichelt/tuning-coach.git
-cd tuning-coach/sidecar
 cargo build --release
 ./target/release/tuning-coach-sidecar
 ```
 
-### Install the SimHub Overlay Bundle
+The sidecar listens on:
+- UDP telemetry: `127.0.0.1:7777`
+- HTTP + WebSocket overlay/API: `127.0.0.1:7778`
 
-1. Download the latest `tuning-coach-overlay-bundle.zip` from [Releases](https://github.com/mac-reichelt/tuning-coach/releases) or find it in `overlay/`.
-2. In SimHub, go to **Overlays > Import Overlay**.
-3. Select the zip file and follow the prompts.
+**Install the SimHub overlay:**
 
-See [Getting Started](docs/getting-started.md#install-the-simhub-overlay-bundle-v013) for details.
+Copy `overlay/tuning-coach.djson` and `overlay/tuning-coach.djson.metadata` into:
+
+```text
+%ProgramFiles(x86)%\SimHub\DashTemplates\tuning-coach\
+```
+
+PowerShell one-liner (from repo root):
+
+```powershell
+$dst = Join-Path ${env:ProgramFiles(x86)} 'SimHub\DashTemplates\tuning-coach'; New-Item -ItemType Directory -Force -Path $dst | Out-Null; Copy-Item .\overlay\tuning-coach.djson, .\overlay\tuning-coach.djson.metadata -Destination $dst -Force
+```
+
+Then in SimHub:
+1. Open **Overlays**.
+2. Enable **Tuning Coach**.
+3. Position/resize as desired.
+
+The SimHub overlay points to `http://127.0.0.1:7778/`, so no external static file server is required.
 
 ## Documentation
 - [Getting Started](docs/getting-started.md)
@@ -34,11 +55,12 @@ See [Getting Started](docs/getting-started.md#install-the-simhub-overlay-bundle-
 - [API Reference](docs/reference/api.md)
 
 ## Status
-| Feature                | Status   |
-|------------------------|----------|
-| Telemetry parsing      | Stable   |
-| SimHub overlay bundle  | Beta     |
-| Setup recommendations  | Beta     |
+| Feature | Status |
+|---------|--------|
+| Telemetry HUD | Stable |
+| Lap-status badge | Stable |
+| Recommendation slot | Beta (Phase 7+) |
+| SimHub overlay serving | Stable |
 
 ## Contributing
 See [CONTRIBUTING.md](CONTRIBUTING.md).
