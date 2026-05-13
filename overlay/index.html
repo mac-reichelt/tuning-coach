@@ -71,11 +71,8 @@
     // ── WebSocket client ─────────────────────────────────────
 
     // Allow overriding the sidecar WS URL for development/testing:
-    //   index.html?ws=ws://127.0.0.1:39000/ws
-    const params = new URLSearchParams(location.search);
-    const WS_URL = params.get('ws') ?? 'ws://127.0.0.1:38920/ws';
-
-    const client = new WsClient(WS_URL);
+    //   /?ws=ws://127.0.0.1:39000/ws
+    const client = new WsClient();
 
     client.addEventListener('statechange', (ev) => {
       setConnectionState(ev.detail.state);

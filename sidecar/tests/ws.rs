@@ -7,16 +7,21 @@ use std::{
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::time::{sleep, timeout};
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{client::IntoClientRequest, http::HeaderValue, protocol::Message},
+};
 
 #[tokio::test]
 async fn sidecar_streams_telemetry_and_recommendations_to_multiple_clients() {
     let ws_port = find_free_port();
     let udp_port = find_free_port();
+    let temp_data_dir = tempfile::tempdir().expect("temp dir");
     let _sidecar = SidecarProcessGuard {
         child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
             .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
             .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
+            .env("TUNING_COACH_DATA_DIR", temp_data_dir.path())
             .spawn()
             .expect("sidecar should start"),
     };
@@ -68,10 +73,12 @@ async fn sidecar_streams_telemetry_and_recommendations_to_multiple_clients() {
 async fn sidecar_rejects_client_schema_version_mismatch() {
     let ws_port = find_free_port();
     let udp_port = find_free_port();
+    let temp_data_dir = tempfile::tempdir().expect("temp dir");
     let _sidecar = SidecarProcessGuard {
         child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
             .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
             .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
+            .env("TUNING_COACH_DATA_DIR", temp_data_dir.path())
             .spawn()
             .expect("sidecar should start"),
     };
@@ -111,6 +118,45 @@ async fn sidecar_rejects_client_schema_version_mismatch() {
 
     assert_eq!(u16::from(close_frame.code), 4001);
     assert!(close_frame.reason.contains("schema_version mismatch"));
+}
+
+#[tokio::test]
+async fn sidecar_echoes_tuning_coach_subprotocol() {
+    let ws_port = find_free_port();
+    let udp_port = find_free_port();
+    let temp_data_dir = tempfile::tempdir().expect("temp dir");
+    let _sidecar = SidecarProcessGuard {
+        child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
+            .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
+            .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
+            .env("TUNING_COACH_DATA_DIR", temp_data_dir.path())
+            .spawn()
+            .expect("sidecar should start"),
+    };
+
+    wait_for_health(ws_port).await;
+
+    let ws_url = format!("ws://127.0.0.1:{ws_port}/ws");
+    let mut request = ws_url
+        .into_client_request()
+        .expect("valid websocket request");
+    request.headers_mut().insert(
+        "Sec-WebSocket-Protocol",
+        HeaderValue::from_static("tuning-coach.v1"),
+    );
+    let (mut ws_client, response) = connect_async(request).await.expect("client connects");
+
+    assert_eq!(
+        response
+            .headers()
+            .get("Sec-WebSocket-Protocol")
+            .and_then(|value| value.to_str().ok()),
+        Some("tuning-coach.v1")
+    );
+
+    let hello = next_json_text_frame(&mut ws_client).await;
+    assert_eq!(hello["type"], "hello");
+    assert_eq!(hello["schema_version"], 1);
 }
 
 #[tokio::test]
@@ -286,10 +332,12 @@ impl Drop for SidecarProcessGuard {
 async fn admin_stub_recommendation_arrives_within_200ms_and_matches_schema() {
     let ws_port = find_free_port();
     let udp_port = find_free_port();
+    let temp_data_dir = tempfile::tempdir().expect("temp dir");
     let _sidecar = SidecarProcessGuard {
         child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
             .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
             .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
+            .env("TUNING_COACH_DATA_DIR", temp_data_dir.path())
             .spawn()
             .expect("sidecar should start"),
     };

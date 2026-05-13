@@ -1,150 +1,65 @@
 # tuning-coach overlay
 
-SimHub overlay for `tuning-coach`. Vanilla HTML/CSS/JS — no build step.
-
-The overlay connects to the tuning-coach sidecar over a localhost WebSocket
-and renders:
-
-- **Telemetry HUD** — speed, gear, RPM, throttle/brake bars, steering indicator, lap clock (hidden by default; click the left-edge tab to toggle).
-- **Lap-status badge** — `valid` / `dirty` / `pit` / `reset` / `out_lap`.
-- **Recommendation slot** — placeholder card that slides in from the right; will surface real tuning advice once Phase 7 heuristics land.
-- **Connection-status bar** — shows "Reconnecting…" or "Sidecar offline" whenever the sidecar is unreachable; automatically disappears when connected.
+SimHub overlay for `tuning-coach`. The sidecar now serves the overlay UI over
+HTTP and WebSocket on the same port (`127.0.0.1:7778` by default), so users run
+only `tuning-coach-sidecar`.
 
 ## Requirements
 
 | Component | Minimum version |
-|-----------|----------------|
-| SimHub    | 9.0            |
+|-----------|-----------------|
+| SimHub | 9.0 |
 | tuning-coach sidecar | 0.1.0 |
 | Forza Motorsport (PC) | any |
 
-The sidecar must be running **before** you load the overlay. It binds to
-`ws://127.0.0.1:38920/ws` by default; the overlay will keep retrying until
-it connects.
-
 ## Install
 
-### 1 — Install and run the sidecar
+### 1) Run the sidecar
 
 Download the latest `tuning-coach-sidecar` binary from the
-[Releases page](https://github.com/mac-reichelt/tuning-coach/releases) and
-follow the [sidecar README](../sidecar/README.md).
+[Releases page](https://github.com/mac-reichelt/tuning-coach/releases), then run
+it. Keep it running while you use the overlay.
 
-### 2 — Copy the overlay into SimHub
+### 2) Copy SimHub overlay files
 
-Copy (or symlink) this entire `overlay/` directory into your SimHub
-`DashTemplates` folder. The default location is:
+Copy these files into your SimHub DashTemplates folder:
 
-```
-%USERPROFILE%\Documents\SimHub\DashTemplates\tuning-coach\
-```
+- `overlay/tuning-coach.djson`
+- `overlay/tuning-coach.djson.metadata`
 
-The final directory tree should look like:
+Default destination:
 
-```
-DashTemplates\
-└── tuning-coach\
-    ├── manifest.json
-    ├── index.html
-    ├── src\
-    │   ├── ws-client.js
-    │   ├── telemetry-hud.js
-    │   ├── lap-status.js
-    │   └── recommendation-slot.js
-    └── styles\
-        └── overlay.css
+```text
+%ProgramFiles(x86)%\SimHub\DashTemplates\tuning-coach\
 ```
 
-### 3 — Enable in SimHub
+PowerShell one-liner (from repo root):
 
-1. Open SimHub → **Overlays** tab.
-2. Look for **tuning-coach** in the **Web overlays** list (not the classic Dash list — our overlay is an HTML web overlay, not a `.djson` native dash).
-3. Enable it and position/resize it on your screen as desired.
-4. Start a Forza Motorsport session — the overlay will connect automatically.
-
-## Usage
-
-| Element | Behaviour |
-|---------|-----------|
-| **Connection bar** (top-centre) | Hidden when connected. Shows "Reconnecting…" in amber or "Sidecar offline" in red. |
-| **Lap-status badge** (top-right) | Colour-coded: green = valid, amber = dirty, purple = pit, blue = reset, grey = out lap. |
-| **HUD toggle tab** (left edge, bottom) | Click to show/hide the telemetry HUD. |
-| **Telemetry HUD** (bottom-left) | Gear, speed, RPM bar, throttle/brake bars, steering dot, lap time + delta. |
-| **Recommendation slot** (right side) | Slides in when the coach has advice. Dismiss with ✕; snooze hides for the session; History shows past advice. |
-
-## Speed unit
-
-The HUD defaults to **km/h**. The sidecar will expose a `user_preferences`
-field in the `hello` message in a future release; the overlay is wired to
-pick this up automatically.
-
-## Troubleshooting
-
-| Symptom | Likely cause | Fix |
-|---------|-------------|-----|
-| Connection bar stays amber/red | Sidecar not running | Start `tuning-coach-sidecar` before loading the overlay |
-| Connection bar stays amber/red | Wrong WS URL | Append `?ws=ws://127.0.0.1:<port>/ws` to the overlay URL |
-| No telemetry data shown | Forza data-out not configured | Follow the [Forza data-out setup](../docs/getting-started.md#configure-forza-data-out) |
-| Overlay not visible in SimHub | Overlay not enabled | Enable **tuning-coach** in the SimHub **Web overlays** list (not the classic Dash list — this is an HTML overlay, not a `.djson` native dash) |
-| Recommendation slot never appears | Phase 7 heuristics not yet active | Expected — placeholder is shown until heuristics land |
-
-## Architecture
-
-```
-Forza (UDP) ──► sidecar (Rust)
-                    │  ws://127.0.0.1:38920/ws
-                    ▼
-              overlay (this directory)
-                    │
-              ┌─────┼─────────────────┐
-              │     │                 │
-         ws-client  telemetry-hud  lap-status
-                    │
-              recommendation-slot
+```powershell
+$dst = Join-Path ${env:ProgramFiles(x86)} 'SimHub\DashTemplates\tuning-coach'; New-Item -ItemType Directory -Force -Path $dst | Out-Null; Copy-Item .\overlay\tuning-coach.djson, .\overlay\tuning-coach.djson.metadata -Destination $dst -Force
 ```
 
-See [ADR-0002](../docs/adr/0002-ws-api-contract.md) for the full WS API
-contract and [docs/reference/api.md](../docs/reference/api.md) for a
-human-readable summary.
+### 3) Enable overlay in SimHub
 
-## File layout
+1. Open SimHub → **Overlays**.
+2. Enable **Tuning Coach**.
+3. Position and resize it.
 
-```
-overlay/
-├── README.md
-├── CHANGELOG.md
-├── manifest.json          # SimHub web overlay manifest (manifestVersion, type: "web", target: "overlay")
-├── index.html             # Entry point
-├── src/
-│   ├── ws-client.js       # WS client with reconnect-with-backoff
-│   ├── telemetry-hud.js   # Speed / gear / bars / lap clock
-│   ├── lap-status.js      # Lap-status badge
-│   └── recommendation-slot.js  # Placeholder recommendation panel
-└── styles/
-    └── overlay.css
-```
+The `.djson` points SimHub to `http://127.0.0.1:7778/`, which serves the HTML,
+JS modules, and CSS directly from the sidecar.
 
 ## Development
 
-No build step — open `index.html` directly in a browser and point it at a
-running sidecar. The `ws-client.js` module will keep retrying until the
-sidecar is available.
+You can override WS target for testing with a query parameter:
 
-For a quick local test without Forza running, use the sidecar's
-[test-inject endpoints](../docs/reference/api.md#test-hooks-developmentintegration-tests):
-
-```sh
-# Inject a telemetry event
-curl -s -X POST http://127.0.0.1:38920/test/telemetry \
-  -H 'Content-Type: application/json' \
-  -d '{"data":{"speed_kph":120,"gear":3,"rpm":6500,"rpm_max":9000,"throttle":0.8,"brake":0,"steer":0.1,"lap_status":"valid","lap":{"number":2,"current_s":45.3,"best_s":88.9,"last_s":89.2}}}'
-
-# Inject a recommendation
-curl -s -X POST http://127.0.0.1:38920/test/recommendation \
-  -H 'Content-Type: application/json' \
-  -d '{"data":{"id":"01test","session_id":"01sess","lap_number":2,"category":"springs","title":"Front bottoming out","detected":"Front suspension >95% travel on corners.","confidence":"high","adjustment":{"summary":"Front spring rate 85 → 92 N/mm"}}}'
+```text
+http://127.0.0.1:7778/?ws=ws://127.0.0.1:39000/ws
 ```
 
-## Changelog
+For telemetry injection endpoints, use the same sidecar HTTP port:
 
-See [CHANGELOG.md](./CHANGELOG.md).
+```sh
+curl -s -X POST http://127.0.0.1:7778/test/telemetry \
+  -H 'Content-Type: application/json' \
+  -d '{"data":{"speed_kph":120,"gear":3}}'
+```

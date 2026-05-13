@@ -1,107 +1,37 @@
 # API Reference
 
-## Storage API (since 0.1.0)
+## Sidecar HTTP Endpoints
 
-The `Storage` struct provides methods for interacting with the database. This section documents the methods relevant to recommendations and car setups, added in PR #84.
+| Endpoint | Purpose |
+|----------|--------|
+| `/` | Serves overlay HTML (SimHub overlay) |
+| `/src/{path}` | Serves overlay JS modules |
+| `/styles/{path}` | Serves overlay CSS |
+| `/health` | Health check |
+| `/ws` | WebSocket telemetry/recommendations |
+| `/test/telemetry` | Inject telemetry (dev/test) |
+| `/test/recommendation` | Inject recommendation (dev/test) |
 
-### Recommendations
+**Minimum version:** Sidecar v0.2.0+ (overlay serving)
 
-#### Insert Recommendation
+## Overlay Serving
 
-```rust
-fn insert_recommendation(
-    &self,
-    session_id: i64,
-    lap_id: Option<i64>,
-    category: &str,
-    parameter: Option<&str>,
-    confidence: &str,
-    payload_json: &Value,
-) -> Result<i64, StorageError>
+The SimHub overlay is now served directly from the sidecar HTTP endpoint (`http://127.0.0.1:7778/`). The `.djson` file points SimHub to this address. No separate static file server or overlay bundle is required.
+
+## WebSocket API
+
+See [ADR-0002](../adr/0002-ws-api-contract.md) for schema and contract details.
+
+## Test Injection Endpoints
+
+For development/testing, you can inject telemetry and recommendations:
+
+```bash
+curl -s -X POST http://127.0.0.1:7778/test/telemetry \
+  -H 'Content-Type: application/json' \
+  -d '{"data":{"speed_kph":120,"gear":3}}'
+
+curl -s -X POST http://127.0.0.1:7778/test/recommendation \
+  -H 'Content-Type: application/json' \
+  -d '{"data":{"id":"01test","session_id":"01sess","lap_number":2,"category":"springs","title":"Front bottoming out","detected":"Front suspension >95% travel on corners.","confidence":"high","adjustment":{"summary":"Front spring rate 85 → 92 N/mm"}}}'
 ```
-
-- **Purpose:** Insert a new recommendation row into the `recommendations` table.
-- **Returns:** The `rowid` of the inserted row on success.
-- **Errors:** Returns `StorageError::Schema` if `category` or `confidence` is invalid.
-- **Valid categories:**
-  - `tires`, `gearing`, `alignment`, `anti_roll`, `springs`, `damping`, `aero`, `brakes`, `differential`, `ride_height`, `engine`
-- **Valid confidences:**
-  - `high`, `medium`, `low`
-
-#### List Recommendations for Session
-
-```rust
-fn list_recommendations_for_session(
-    &self,
-    session_id: i64,
-) -> Result<Vec<RecommendationRow>, StorageError>
-```
-
-- **Purpose:** Return all recommendations for a session, ordered by `created_at ASC`.
-- **Returns:** Vector of `RecommendationRow`.
-
-#### List Recommendations for Lap
-
-```rust
-fn list_recommendations_for_lap(
-    &self,
-    lap_id: i64,
-) -> Result<Vec<RecommendationRow>, StorageError>
-```
-
-- **Purpose:** Return all recommendations associated with a specific lap, ordered by `created_at ASC`.
-- **Returns:** Vector of `RecommendationRow`.
-
-#### RecommendationRow Structure
-
-```rust
-pub struct RecommendationRow {
-    pub id: i64,
-    pub session_id: i64,
-    pub lap_id: Option<i64>,
-    pub created_at: String,
-    pub category: String,
-    pub parameter: Option<String>,
-    pub confidence: String,
-    pub delivered: bool,
-    pub dismissed: bool,
-    pub payload_json: Value,
-    pub schema_version: i32,
-}
-```
-
-### Car Setups
-
-#### Read Car Setup
-
-```rust
-fn read_car_setup(
-    &self,
-    car_ordinal: i32,
-) -> Result<Option<CarSetup>, StorageError>
-```
-
-- **Purpose:** Look up the current setup for a car by ordinal.
-- **Returns:** `Ok(None)` if no row exists for `car_ordinal`.
-- **CarSetup Structure:**
-
-```rust
-pub struct CarSetup {
-    pub setup: serde_json::Map<String, Value>,
-    pub locked_params: Vec<String>,
-    pub upgrades: serde_json::Map<String, Value>,
-    pub source: String,
-    pub schema_version: i32,
-    pub updated_at: String,
-}
-```
-
-### StorageError Variants
-
-- `Sqlite(rusqlite::Error)`
-- `Json(serde_json::Error)`
-- `Schema(String)` — schema constraint violated
-
----
-
-For more details on the storage schema, see [ADR 0001](../adr/0001-storage-schema.md).
