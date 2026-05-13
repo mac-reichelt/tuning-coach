@@ -10,10 +10,12 @@ use tokio::time::sleep;
 async fn sidecar_health_endpoint_returns_ok() {
     let ws_port = find_free_port();
     let udp_port = find_free_port();
+    let temp_data_dir = tempfile::tempdir().expect("temp dir");
     let _sidecar = SidecarProcessGuard {
         child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
             .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
             .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
+            .env("TUNING_COACH_DATA_DIR", temp_data_dir.path())
             .spawn()
             .expect("sidecar should start"),
     };
@@ -41,10 +43,12 @@ async fn sidecar_health_endpoint_returns_ok() {
 async fn sidecar_root_serves_overlay_html() {
     let ws_port = find_free_port();
     let udp_port = find_free_port();
+    let temp_data_dir = tempfile::tempdir().expect("temp dir");
     let _sidecar = SidecarProcessGuard {
         child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
             .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
             .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
+            .env("TUNING_COACH_DATA_DIR", temp_data_dir.path())
             .spawn()
             .expect("sidecar should start"),
     };
