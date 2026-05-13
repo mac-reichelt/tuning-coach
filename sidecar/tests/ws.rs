@@ -16,10 +16,12 @@ use tokio_tungstenite::{
 async fn sidecar_streams_telemetry_and_recommendations_to_multiple_clients() {
     let ws_port = find_free_port();
     let udp_port = find_free_port();
+    let temp_data_dir = tempfile::tempdir().expect("temp dir");
     let _sidecar = SidecarProcessGuard {
         child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
             .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
             .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
+            .env("TUNING_COACH_DATA_DIR", temp_data_dir.path())
             .spawn()
             .expect("sidecar should start"),
     };
@@ -71,10 +73,12 @@ async fn sidecar_streams_telemetry_and_recommendations_to_multiple_clients() {
 async fn sidecar_rejects_client_schema_version_mismatch() {
     let ws_port = find_free_port();
     let udp_port = find_free_port();
+    let temp_data_dir = tempfile::tempdir().expect("temp dir");
     let _sidecar = SidecarProcessGuard {
         child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
             .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
             .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
+            .env("TUNING_COACH_DATA_DIR", temp_data_dir.path())
             .spawn()
             .expect("sidecar should start"),
     };
@@ -120,10 +124,12 @@ async fn sidecar_rejects_client_schema_version_mismatch() {
 async fn sidecar_echoes_tuning_coach_subprotocol() {
     let ws_port = find_free_port();
     let udp_port = find_free_port();
+    let temp_data_dir = tempfile::tempdir().expect("temp dir");
     let _sidecar = SidecarProcessGuard {
         child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
             .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
             .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
+            .env("TUNING_COACH_DATA_DIR", temp_data_dir.path())
             .spawn()
             .expect("sidecar should start"),
     };
@@ -326,10 +332,12 @@ impl Drop for SidecarProcessGuard {
 async fn admin_stub_recommendation_arrives_within_200ms_and_matches_schema() {
     let ws_port = find_free_port();
     let udp_port = find_free_port();
+    let temp_data_dir = tempfile::tempdir().expect("temp dir");
     let _sidecar = SidecarProcessGuard {
         child: std::process::Command::new(assert_cmd::cargo::cargo_bin("tuning-coach-sidecar"))
             .env("TUNING_COACH_WS_LISTEN_PORT", ws_port.to_string())
             .env("TUNING_COACH_UDP_LISTEN_PORT", udp_port.to_string())
+            .env("TUNING_COACH_DATA_DIR", temp_data_dir.path())
             .spawn()
             .expect("sidecar should start"),
     };
