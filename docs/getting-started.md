@@ -5,19 +5,12 @@ sidecar and enabling the SimHub overlay.
 
 ## Prerequisites
 - [Rust](https://rustup.rs/) 1.80 or newer
-- SimHub (for overlay integration)
-
-## Clone the Repository
-
-```bash
-git clone https://github.com/mac-reichelt/tuning-coach.git
-cd tuning-coach
-```
+- SimHub 9.0+
+- Forza Motorsport (PC)
 
 ## Build and Run the Sidecar
 
 ```bash
-cd sidecar
 cargo build --release
 ./target/release/tuning-coach-sidecar
 ```
@@ -50,4 +43,3 @@ file server is required.
 
 ## Next Steps
 - [Configuration](configuration.md)
-- [API Reference](reference/api.md)
