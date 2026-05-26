@@ -1,17 +1,23 @@
 {
-  "Category": null,
-  "Title": "Tuning Coach",
-  "Description": "Live telemetry HUD and tuning recommendations for Forza Motorsport",
-  "Author": "tuning-coach contributors",
   "ScreenCount": 1.0,
-  "InGameScreensIndexs": [0],
-  "IdleScreensIndexs": [0],
+  "InGameScreensIndexs": [
+    0
+  ],
+  "IdleScreensIndexs": [
+    0
+  ],
   "MainPreviewIndex": 0,
   "IsOverlay": true,
-  "Width": 800.0,
-  "Height": 450.0,
   "OverlaySizeWarning": false,
   "MetadataVersion": 2.0,
   "EnableOnDashboardMessaging": true,
-  "PitScreensIndexs": []
+  "PitScreensIndexs": [],
+  "SimHubVersion": "9.11.13",
+  "Category": null,
+  "Title": null,
+  "Description": null,
+  "Author": null,
+  "Width": 800.0,
+  "Height": 450.0,
+  "DashboardVersion": ""
 }

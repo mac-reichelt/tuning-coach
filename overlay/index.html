@@ -18,21 +18,34 @@
     <span id="connection-status-text">Connecting…</span>
   </div>
 
-  <!-- ── Lap-status badge ──────────────────────────────────── -->
+  <!-- ── Lap-status badge (top-left) ──────────────────────── -->
   <div id="lap-status" data-status="unknown" role="status" aria-label="Lap status">—</div>
 
-  <!-- ── Telemetry HUD toggle ──────────────────────────────── -->
+  <!-- ── Top-right control cluster ────────────────────────── -->
   <!--
-    A tiny tab on the left edge of the HUD container; tapping it toggles
-    HUD visibility. The HUD is hidden by default.
+    Row 1: telemetry-status pill (Live / Paused / No data)
+    Row 2: HUD toggle + Raw Data toggle buttons side-by-side
   -->
-  <button id="hud-toggle" aria-label="Toggle telemetry HUD" title="Toggle HUD"></button>
+  <div id="overlay-controls">
+    <div id="telemetry-status" role="status" aria-live="polite"></div>
+    <div id="overlay-buttons">
+      <button id="hud-toggle" aria-label="Toggle telemetry HUD">HUD</button>
+      <button id="dyno-toggle" aria-label="Toggle dyno panel">Dyno</button>
+      <button id="raw-toggle" aria-label="Toggle raw telemetry data">Raw Data</button>
+    </div>
+  </div>
 
   <!-- ── Telemetry HUD ─────────────────────────────────────── -->
   <!--
-    Populated by TelemetryHud; hidden by default, toggle via #hud-toggle.
+    Populated by TelemetryHud; visible by default, toggle via #hud-toggle.
   -->
   <div id="telemetry-hud" aria-label="Telemetry HUD"></div>
+
+  <!-- ── Dyno panel ──────────────────────────────────────────── -->
+  <div id="dyno-panel" hidden></div>
+
+  <!-- ── Raw telemetry panel ───────────────────────────────── -->
+  <div id="raw-telemetry-panel" hidden></div>
 
   <!-- ── Recommendation slot ───────────────────────────────── -->
   <!--
@@ -43,15 +56,24 @@
 
   <script type="module">
     import { WsClient }           from './src/ws-client.js';
-    import { TelemetryHud }       from './src/telemetry-hud.js';
-    import { LapStatus }          from './src/lap-status.js';
-    import { RecommendationSlot } from './src/recommendation-slot.js';
+    import { TelemetryHud }       from './src/telemetry-hud.js?v=20260525-6';
+    import { LapStatus }          from './src/lap-status.js?v=20260525-6';
+    import { RecommendationSlot } from './src/recommendation-slot.js?v=20260525-6';
+    import { TelemetryStatus }    from './src/telemetry-status.js?v=20260525-6';
+    import { RawTelemetryPanel }  from './src/raw-telemetry.js?v=20260525-8';
+    import { DynoGraph }          from './src/dyno-graph.js?v=20260525-8';
 
     // ── Init components ──────────────────────────────────────
 
     const hud    = new TelemetryHud(document.getElementById('telemetry-hud'));
     const badge  = new LapStatus(document.getElementById('lap-status'));
     const slot   = new RecommendationSlot(document.getElementById('recommendation-slot'));
+    const tsIndicator = new TelemetryStatus(document.getElementById('telemetry-status'));
+    const rawPanel    = new RawTelemetryPanel(
+      document.getElementById('raw-telemetry-panel'),
+      document.getElementById('raw-toggle'),
+    );
+    const dynoGraph = new DynoGraph(document.getElementById('dyno-panel'));
 
     // ── Connection-status UI ─────────────────────────────────
 
@@ -87,6 +109,13 @@
       const data = ev.detail;
       hud.update(data);
       badge.updateFromTelemetry(data);
+      tsIndicator.update(data.is_race_on);
+      rawPanel.update(data.raw);
+      dynoGraph.onTelemetry(data);
+    });
+
+    client.addEventListener('dyno_update', (ev) => {
+      dynoGraph.onDynoUpdate(ev.detail);
     });
 
     client.addEventListener('recommendation', (ev) => {
@@ -107,8 +136,8 @@
       badge.set('dirty');
     });
 
-    // lap_completed — reset to valid for the new lap
-    client.addEventListener('lap_completed', () => {
+    // lap_clean_marked — reset to valid for the new lap
+    client.addEventListener('lap_clean_marked', () => {
       badge.set('valid');
     });
 
@@ -119,6 +148,12 @@
 
     document.getElementById('hud-toggle').addEventListener('click', () => {
       hud.toggle();
+    });
+
+    // ── Dyno toggle ──────────────────────────────────────────
+
+    document.getElementById('dyno-toggle').addEventListener('click', () => {
+      dynoGraph.toggle();
     });
 
     // ── Start ────────────────────────────────────────────────
