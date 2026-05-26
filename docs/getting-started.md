@@ -1,45 +1,45 @@
 # Getting Started
 
-Welcome to Tuning Coach! This guide walks you through building and running the
-sidecar and enabling the SimHub overlay.
-
 ## Prerequisites
-- [Rust](https://rustup.rs/) 1.80 or newer
-- SimHub 9.0+
-- Forza Motorsport (PC)
+- Forza Motorsport or Horizon running
+- SimHub (for overlay integration) or a browser
+- Rust toolchain (for sidecar)
 
-## Build and Run the Sidecar
+## Running the Sidecar
+
+Build and run the sidecar:
 
 ```bash
-cargo build --release
-./target/release/tuning-coach-sidecar
+cargo run --release --manifest-path sidecar/Cargo.toml
 ```
 
-The sidecar listens on:
-- UDP telemetry: `127.0.0.1:7777`
-- HTTP + WebSocket overlay/API: `127.0.0.1:7778`
+## Using the Overlay
 
-## Install the SimHub Overlay
+Open `overlay/index.html` in SimHub as a browser overlay, or directly in a browser.
 
-Copy `overlay/tuning-coach.djson` and `overlay/tuning-coach.djson.metadata` into:
+### Overlay Controls
 
-```text
-%ProgramFiles(x86)%\SimHub\DashTemplates\tuning-coach\
-```
+Top-right cluster:
+- **HUD** — Toggle the main telemetry HUD
+- **Dyno** — Open the guided Dyno panel
+- **Raw Data** — Open the Raw Telemetry panel
 
-PowerShell (from repo root):
+### Dyno Panel
 
-```powershell
-$dst = Join-Path ${env:ProgramFiles(x86)} 'SimHub\DashTemplates\tuning-coach'; New-Item -ItemType Directory -Force -Path $dst | Out-Null; Copy-Item .\overlay\tuning-coach.djson, .\overlay\tuning-coach.djson.metadata -Destination $dst -Force
-```
+1. Click **Dyno** to open the panel.
+2. Follow the instructions:
+   - Stop on a straight, select the target gear, turn off traction control.
+   - Hold stopped for 3 seconds to arm.
+   - Apply full throttle and hold until the rev limiter.
+   - Results (power/torque curves) will appear when complete.
+3. Drag the panel by its header to reposition.
 
-Then in SimHub:
-1. Open **Overlays**.
-2. Enable **Tuning Coach**.
-3. Position/resize as desired.
+### Raw Telemetry Panel
 
-The SimHub overlay points to `http://127.0.0.1:7778/`, so no external static
-file server is required.
+- Click **Raw Data** to open.
+- Inspect all Forza packet fields live.
+- Drag the panel by its header to reposition.
 
 ## Next Steps
-- [Configuration](configuration.md)
+- [API Reference](reference/api.md)
+- [Lap Validity](reference/lap-validity.md)
