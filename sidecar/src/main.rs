@@ -963,7 +963,6 @@ impl DynoCollector {
             })
         }).collect();
         serde_json::json!({
-            "type": "dyno_update",
             "phase": self.phase_name(),
             "target_gear": self.target_gear,
             "drivetrain": self.drivetrain,

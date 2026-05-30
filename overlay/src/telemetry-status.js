@@ -4,7 +4,7 @@
  * Shows whether the game is actively streaming data:
  *   live    — is_race_on=true, packets arriving
  *   paused  — is_race_on=false (game paused / in menu), packets still arriving
- *   none    — no telemetry received in STALE_MS (hidden)
+ *   none    — no telemetry received in STALE_MS; shows "No data" indicator
  *
  * Usage:
  *   import { TelemetryStatus } from './telemetry-status.js';

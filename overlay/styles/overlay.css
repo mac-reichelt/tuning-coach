@@ -622,6 +622,11 @@ html, body {
   text-align: right;
 }
 
+.raw-null {
+  color: var(--color-muted);
+  opacity: 0.5;
+}
+
 /* Draggable panel headers */
 .dyno-header,
 .raw-header {

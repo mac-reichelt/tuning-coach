@@ -14,9 +14,9 @@
   "PitScreensIndexs": [],
   "SimHubVersion": "9.11.13",
   "Category": null,
-  "Title": null,
-  "Description": null,
-  "Author": null,
+  "Title": "Tuning Coach",
+  "Description": "Live telemetry HUD and tuning recommendations for Forza Motorsport",
+  "Author": "tuning-coach contributors",
   "Width": 800.0,
   "Height": 450.0,
   "DashboardVersion": ""
