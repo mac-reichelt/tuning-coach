@@ -831,7 +831,11 @@ async fn admin_test_emit_recommendation(State(state): State<AppState>) -> impl I
 /// Convert a non-finite f32 to 0.0 for HUD display fields.
 #[inline]
 fn jf(v: f32) -> f64 {
-    if v.is_finite() { f64::from(v) } else { 0.0 }
+    if v.is_finite() {
+        f64::from(v)
+    } else {
+        0.0
+    }
 }
 
 /// Convert an f32 to a JSON number, or null if non-finite.
@@ -911,7 +915,11 @@ impl DynoCollector {
     }
 
     fn target_gear_for_drivetrain(dt: i32) -> u8 {
-        if dt == 1 { 2 } else { 1 }
+        if dt == 1 {
+            2
+        } else {
+            1
+        }
     }
 
     fn reset_to_waiting(&mut self) {
@@ -925,11 +933,17 @@ impl DynoCollector {
     }
 
     fn compute_derived(&mut self) {
-        if self.bins.is_empty() { return; }
+        if self.bins.is_empty() {
+            return;
+        }
         let peak_power = self.bins.values().map(|(p, _)| *p).fold(0.0f32, f32::max);
-        if peak_power <= 0.0 { return; }
+        if peak_power <= 0.0 {
+            return;
+        }
         let threshold = peak_power * DYNO_POWER_BAND_FRAC;
-        self.power_band_start = self.bins.iter()
+        self.power_band_start = self
+            .bins
+            .iter()
             .find(|(_, (p, _))| *p >= threshold)
             .map(|(rpm, _)| *rpm as f32);
     }
@@ -955,13 +969,17 @@ impl DynoCollector {
     }
 
     fn to_update_payload(&self) -> Value {
-        let bins_arr: Vec<Value> = self.bins.iter().map(|(rpm, (pw, tq))| {
-            serde_json::json!({
-                "rpm": rpm,
-                "power_w": raw_f(*pw),
-                "torque_nm": raw_f(*tq),
+        let bins_arr: Vec<Value> = self
+            .bins
+            .iter()
+            .map(|(rpm, (pw, tq))| {
+                serde_json::json!({
+                    "rpm": rpm,
+                    "power_w": raw_f(*pw),
+                    "torque_nm": raw_f(*tq),
+                })
             })
-        }).collect();
+            .collect();
         serde_json::json!({
             "phase": self.phase_name(),
             "target_gear": self.target_gear,
@@ -1028,11 +1046,17 @@ impl DynoCollector {
                         let bucket = ((rpm / DYNO_BIN_RPM as f32).round() as u32) * DYNO_BIN_RPM;
                         let entry = self.bins.entry(bucket).or_insert((0.0, 0.0));
                         if dash.power > entry.0 || dash.torque > entry.1 {
-                            if dash.power > entry.0 { entry.0 = dash.power; }
-                            if dash.torque > entry.1 { entry.1 = dash.torque; }
+                            if dash.power > entry.0 {
+                                entry.0 = dash.power;
+                            }
+                            if dash.torque > entry.1 {
+                                entry.1 = dash.torque;
+                            }
                             bins_changed = true;
                         }
-                        if rpm > self.peak_rpm { self.peak_rpm = rpm; }
+                        if rpm > self.peak_rpm {
+                            self.peak_rpm = rpm;
+                        }
                     } else {
                         // RPM dropped ≥3% at full throttle = limiter bounce → complete
                         self.detected_redline = Some(self.peak_rpm);
@@ -1060,103 +1084,109 @@ fn dash_to_overlay_json(dash: &telemetry::DashPacket, lap_status: &str, dyno: &V
     // Build the raw block imperatively to avoid serde_json::json! recursion limits.
     let mut raw = serde_json::Map::with_capacity(80);
     macro_rules! ri {
-        ($k:expr, $v:expr) => { raw.insert($k.to_string(), Value::from($v)); };
+        ($k:expr, $v:expr) => {
+            raw.insert($k.to_string(), Value::from($v));
+        };
     }
     macro_rules! rf {
-        ($k:expr, $v:expr) => { raw.insert($k.to_string(), raw_f($v)); };
+        ($k:expr, $v:expr) => {
+            raw.insert($k.to_string(), raw_f($v));
+        };
     }
     macro_rules! rfo {
-        ($k:expr, $v:expr) => { raw.insert($k.to_string(), raw_fo($v)); };
+        ($k:expr, $v:expr) => {
+            raw.insert($k.to_string(), raw_fo($v));
+        };
     }
 
-    ri!("timestamp_ms",        s.timestamp_ms);
-    rf!("engine_max_rpm",      s.engine_max_rpm);
-    rf!("engine_idle_rpm",     s.engine_idle_rpm);
-    rf!("current_engine_rpm",  s.current_engine_rpm);
-    rf!("accel_x",             s.acceleration_x);
-    rf!("accel_y",             s.acceleration_y);
-    rf!("accel_z",             s.acceleration_z);
-    rf!("vel_x",               s.velocity_x);
-    rf!("vel_y",               s.velocity_y);
-    rf!("vel_z",               s.velocity_z);
-    rf!("ang_vel_x",           s.angular_velocity_x);
-    rf!("ang_vel_y",           s.angular_velocity_y);
-    rf!("ang_vel_z",           s.angular_velocity_z);
-    rf!("yaw",                 s.yaw);
-    rf!("pitch",               s.pitch);
-    rf!("roll",                s.roll);
-    rf!("susp_norm_fl",        s.normalized_suspension_travel_front_left);
-    rf!("susp_norm_fr",        s.normalized_suspension_travel_front_right);
-    rf!("susp_norm_rl",        s.normalized_suspension_travel_rear_left);
-    rf!("susp_norm_rr",        s.normalized_suspension_travel_rear_right);
-    rf!("tire_slip_ratio_fl",  s.tire_slip_ratio_front_left);
-    rf!("tire_slip_ratio_fr",  s.tire_slip_ratio_front_right);
-    rf!("tire_slip_ratio_rl",  s.tire_slip_ratio_rear_left);
-    rf!("tire_slip_ratio_rr",  s.tire_slip_ratio_rear_right);
-    rf!("wheel_rot_speed_fl",  s.wheel_rotation_speed_front_left);
-    rf!("wheel_rot_speed_fr",  s.wheel_rotation_speed_front_right);
-    rf!("wheel_rot_speed_rl",  s.wheel_rotation_speed_rear_left);
-    rf!("wheel_rot_speed_rr",  s.wheel_rotation_speed_rear_right);
-    ri!("on_rumble_fl",        s.wheel_on_rumble_strip_front_left);
-    ri!("on_rumble_fr",        s.wheel_on_rumble_strip_front_right);
-    ri!("on_rumble_rl",        s.wheel_on_rumble_strip_rear_left);
-    ri!("on_rumble_rr",        s.wheel_on_rumble_strip_rear_right);
-    rf!("puddle_fl",           s.wheel_in_puddle_depth_front_left);
-    rf!("puddle_fr",           s.wheel_in_puddle_depth_front_right);
-    rf!("puddle_rl",           s.wheel_in_puddle_depth_rear_left);
-    rf!("puddle_rr",           s.wheel_in_puddle_depth_rear_right);
-    rf!("surface_rumble_fl",   s.surface_rumble_front_left);
-    rf!("surface_rumble_fr",   s.surface_rumble_front_right);
-    rf!("surface_rumble_rl",   s.surface_rumble_rear_left);
-    rf!("surface_rumble_rr",   s.surface_rumble_rear_right);
-    rf!("slip_angle_fl",       s.tire_slip_angle_front_left);
-    rf!("slip_angle_fr",       s.tire_slip_angle_front_right);
-    rf!("slip_angle_rl",       s.tire_slip_angle_rear_left);
-    rf!("slip_angle_rr",       s.tire_slip_angle_rear_right);
-    rf!("combined_slip_fl",    s.tire_combined_slip_front_left);
-    rf!("combined_slip_fr",    s.tire_combined_slip_front_right);
-    rf!("combined_slip_rl",    s.tire_combined_slip_rear_left);
-    rf!("combined_slip_rr",    s.tire_combined_slip_rear_right);
-    rf!("susp_travel_m_fl",    s.suspension_travel_meters_front_left);
-    rf!("susp_travel_m_fr",    s.suspension_travel_meters_front_right);
-    rf!("susp_travel_m_rl",    s.suspension_travel_meters_rear_left);
-    rf!("susp_travel_m_rr",    s.suspension_travel_meters_rear_right);
-    ri!("car_ordinal",         s.car_ordinal);
-    ri!("car_class",           s.car_class);
-    ri!("car_pi",              s.car_performance_index);
-    ri!("drivetrain",          s.drivetrain_type);
-    ri!("num_cylinders",       s.num_cylinders);
-    rf!("pos_x",               dash.position_x);
-    rf!("pos_y",               dash.position_y);
-    rf!("pos_z",               dash.position_z);
-    rf!("speed_mps",           dash.speed);
-    rf!("power_w",             dash.power);
-    rf!("torque_nm",           dash.torque);
-    rf!("tire_temp_fl_f",      dash.tire_temp_front_left);
-    rf!("tire_temp_fr_f",      dash.tire_temp_front_right);
-    rf!("tire_temp_rl_f",      dash.tire_temp_rear_left);
-    rf!("tire_temp_rr_f",      dash.tire_temp_rear_right);
-    rf!("boost_bar",           dash.boost);
-    rf!("fuel",                dash.fuel);
-    rf!("dist_m",              dash.distance_traveled);
-    rf!("best_lap_s",          dash.best_lap);
-    rf!("last_lap_s",          dash.last_lap);
-    rf!("current_lap_s",       dash.current_lap);
-    rf!("race_time_s",         dash.current_race_time);
-    ri!("lap_number",          dash.lap_number);
-    ri!("race_pos",            dash.race_position);
-    ri!("accel_raw",           dash.accel);
-    ri!("brake_raw",           dash.brake);
-    ri!("clutch_raw",          dash.clutch);
-    ri!("hand_brake_raw",      dash.hand_brake);
-    ri!("gear_raw",            dash.gear);
-    ri!("steer_raw",           dash.steer);
-    ri!("driving_line",        dash.normalized_driving_line);
-    ri!("ai_brake_diff",       dash.normalized_ai_brake_difference);
-    rfo!("tire_wear_fl",       dash.tire_wear_front_left);
-    rfo!("tire_wear_fr",       dash.tire_wear_front_right);
-    rfo!("tire_wear_rl",       dash.tire_wear_rear_left);
-    rfo!("tire_wear_rr",       dash.tire_wear_rear_right);
+    ri!("timestamp_ms", s.timestamp_ms);
+    rf!("engine_max_rpm", s.engine_max_rpm);
+    rf!("engine_idle_rpm", s.engine_idle_rpm);
+    rf!("current_engine_rpm", s.current_engine_rpm);
+    rf!("accel_x", s.acceleration_x);
+    rf!("accel_y", s.acceleration_y);
+    rf!("accel_z", s.acceleration_z);
+    rf!("vel_x", s.velocity_x);
+    rf!("vel_y", s.velocity_y);
+    rf!("vel_z", s.velocity_z);
+    rf!("ang_vel_x", s.angular_velocity_x);
+    rf!("ang_vel_y", s.angular_velocity_y);
+    rf!("ang_vel_z", s.angular_velocity_z);
+    rf!("yaw", s.yaw);
+    rf!("pitch", s.pitch);
+    rf!("roll", s.roll);
+    rf!("susp_norm_fl", s.normalized_suspension_travel_front_left);
+    rf!("susp_norm_fr", s.normalized_suspension_travel_front_right);
+    rf!("susp_norm_rl", s.normalized_suspension_travel_rear_left);
+    rf!("susp_norm_rr", s.normalized_suspension_travel_rear_right);
+    rf!("tire_slip_ratio_fl", s.tire_slip_ratio_front_left);
+    rf!("tire_slip_ratio_fr", s.tire_slip_ratio_front_right);
+    rf!("tire_slip_ratio_rl", s.tire_slip_ratio_rear_left);
+    rf!("tire_slip_ratio_rr", s.tire_slip_ratio_rear_right);
+    rf!("wheel_rot_speed_fl", s.wheel_rotation_speed_front_left);
+    rf!("wheel_rot_speed_fr", s.wheel_rotation_speed_front_right);
+    rf!("wheel_rot_speed_rl", s.wheel_rotation_speed_rear_left);
+    rf!("wheel_rot_speed_rr", s.wheel_rotation_speed_rear_right);
+    ri!("on_rumble_fl", s.wheel_on_rumble_strip_front_left);
+    ri!("on_rumble_fr", s.wheel_on_rumble_strip_front_right);
+    ri!("on_rumble_rl", s.wheel_on_rumble_strip_rear_left);
+    ri!("on_rumble_rr", s.wheel_on_rumble_strip_rear_right);
+    rf!("puddle_fl", s.wheel_in_puddle_depth_front_left);
+    rf!("puddle_fr", s.wheel_in_puddle_depth_front_right);
+    rf!("puddle_rl", s.wheel_in_puddle_depth_rear_left);
+    rf!("puddle_rr", s.wheel_in_puddle_depth_rear_right);
+    rf!("surface_rumble_fl", s.surface_rumble_front_left);
+    rf!("surface_rumble_fr", s.surface_rumble_front_right);
+    rf!("surface_rumble_rl", s.surface_rumble_rear_left);
+    rf!("surface_rumble_rr", s.surface_rumble_rear_right);
+    rf!("slip_angle_fl", s.tire_slip_angle_front_left);
+    rf!("slip_angle_fr", s.tire_slip_angle_front_right);
+    rf!("slip_angle_rl", s.tire_slip_angle_rear_left);
+    rf!("slip_angle_rr", s.tire_slip_angle_rear_right);
+    rf!("combined_slip_fl", s.tire_combined_slip_front_left);
+    rf!("combined_slip_fr", s.tire_combined_slip_front_right);
+    rf!("combined_slip_rl", s.tire_combined_slip_rear_left);
+    rf!("combined_slip_rr", s.tire_combined_slip_rear_right);
+    rf!("susp_travel_m_fl", s.suspension_travel_meters_front_left);
+    rf!("susp_travel_m_fr", s.suspension_travel_meters_front_right);
+    rf!("susp_travel_m_rl", s.suspension_travel_meters_rear_left);
+    rf!("susp_travel_m_rr", s.suspension_travel_meters_rear_right);
+    ri!("car_ordinal", s.car_ordinal);
+    ri!("car_class", s.car_class);
+    ri!("car_pi", s.car_performance_index);
+    ri!("drivetrain", s.drivetrain_type);
+    ri!("num_cylinders", s.num_cylinders);
+    rf!("pos_x", dash.position_x);
+    rf!("pos_y", dash.position_y);
+    rf!("pos_z", dash.position_z);
+    rf!("speed_mps", dash.speed);
+    rf!("power_w", dash.power);
+    rf!("torque_nm", dash.torque);
+    rf!("tire_temp_fl_f", dash.tire_temp_front_left);
+    rf!("tire_temp_fr_f", dash.tire_temp_front_right);
+    rf!("tire_temp_rl_f", dash.tire_temp_rear_left);
+    rf!("tire_temp_rr_f", dash.tire_temp_rear_right);
+    rf!("boost_bar", dash.boost);
+    rf!("fuel", dash.fuel);
+    rf!("dist_m", dash.distance_traveled);
+    rf!("best_lap_s", dash.best_lap);
+    rf!("last_lap_s", dash.last_lap);
+    rf!("current_lap_s", dash.current_lap);
+    rf!("race_time_s", dash.current_race_time);
+    ri!("lap_number", dash.lap_number);
+    ri!("race_pos", dash.race_position);
+    ri!("accel_raw", dash.accel);
+    ri!("brake_raw", dash.brake);
+    ri!("clutch_raw", dash.clutch);
+    ri!("hand_brake_raw", dash.hand_brake);
+    ri!("gear_raw", dash.gear);
+    ri!("steer_raw", dash.steer);
+    ri!("driving_line", dash.normalized_driving_line);
+    ri!("ai_brake_diff", dash.normalized_ai_brake_difference);
+    rfo!("tire_wear_fl", dash.tire_wear_front_left);
+    rfo!("tire_wear_fr", dash.tire_wear_front_right);
+    rfo!("tire_wear_rl", dash.tire_wear_rear_left);
+    rfo!("tire_wear_rr", dash.tire_wear_rear_right);
     raw.insert(
         "track_ordinal".to_string(),
         dash.track_ordinal.map_or(Value::Null, Value::from),
