@@ -1,0 +1,14 @@
+{
+  "name": "tuning-coach-overlay",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "2.2.0",
+    "vitest": "2.2.0"
+  }
+}

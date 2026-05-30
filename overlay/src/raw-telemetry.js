@@ -56,7 +56,7 @@ const LABELS = {
 };
 
 /** Format a numeric value to 3 decimal places when it isn't an integer. */
-function fmt(val) {
+export function fmt(val) {
   if (val === null || val === undefined) return 'N/A';
   if (typeof val === 'boolean') return String(val);
   if (Number.isInteger(val)) return String(val);

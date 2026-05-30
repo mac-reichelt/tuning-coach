@@ -91,11 +91,11 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: overlay/package-lock.json
+          cache-dependency-path: overlay/package.json
 
       - name: Install
         if: steps.check.outputs.present == 'true'
-        run: npm ci
+        run: npm install
 
       - name: Lint
         if: steps.check.outputs.present == 'true'
