@@ -86,7 +86,7 @@
     {
       "label": "ci: lint + test",
       "dependsOrder": "sequence",
-      "dependsOn": ["sidecar: fmt check", "sidecar: clippy", "sidecar: test"],
+      "dependsOn": ["sidecar: fmt check", "sidecar: clippy", "sidecar: test", "sidecar: build (release)"],
       "group": "none",
       "presentation": { "panel": "shared", "reveal": "always" },
       "problemMatcher": []
