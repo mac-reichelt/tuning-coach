@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    // tasks.json "type": "cargo" + settings.json rust-analyzer.*
+    "rust-lang.rust-analyzer",
+    // settings.json "[toml]" defaultFormatter
+    "tamasfe.even-better-toml",
+    // settings.json "[javascript]" / "[html]" / "[css]" defaultFormatter
+    "esbenp.prettier-vscode",
+    // launch.json "type": "lldb"
+    "vadimcn.vscode-lldb"
+  ]
+}
