@@ -1,0 +1,103 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    // ── Sidecar (Rust) ───────────────────────────────────────────────────────
+    {
+      "label": "sidecar: build (debug)",
+      "type": "cargo",
+      "command": "build",
+      "args": ["--manifest-path", "sidecar/Cargo.toml"],
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "panel": "shared", "reveal": "always" },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "sidecar: build (release)",
+      "type": "cargo",
+      "command": "build",
+      "args": ["--manifest-path", "sidecar/Cargo.toml", "--release"],
+      "group": "build",
+      "presentation": { "panel": "shared", "reveal": "always" },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "sidecar: run",
+      "type": "cargo",
+      "command": "run",
+      "args": ["--manifest-path", "sidecar/Cargo.toml"],
+      "group": "none",
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "reveal": "always" },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "sidecar: test",
+      "type": "cargo",
+      "command": "test",
+      "args": ["--manifest-path", "sidecar/Cargo.toml", "--all-targets"],
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "panel": "shared", "reveal": "always" },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "sidecar: test (single, enter name)",
+      "type": "cargo",
+      "command": "test",
+      "args": ["--manifest-path", "sidecar/Cargo.toml", "--all-targets", "${input:testFilter}"],
+      "group": "test",
+      "presentation": { "panel": "shared", "reveal": "always" },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "sidecar: clippy",
+      "type": "cargo",
+      "command": "clippy",
+      "args": ["--manifest-path", "sidecar/Cargo.toml", "--all-targets", "--", "-D", "warnings"],
+      "group": "none",
+      "presentation": { "panel": "shared", "reveal": "always" },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "sidecar: fmt check",
+      "type": "shell",
+      "command": "cargo fmt --manifest-path sidecar/Cargo.toml --all --check",
+      "group": "none",
+      "presentation": { "panel": "shared", "reveal": "always" },
+      "problemMatcher": []
+    },
+    {
+      "label": "sidecar: fmt (apply)",
+      "type": "shell",
+      "command": "cargo fmt --manifest-path sidecar/Cargo.toml --all",
+      "group": "none",
+      "presentation": { "panel": "shared", "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
+      "label": "sidecar: print config (defaults)",
+      "type": "cargo",
+      "command": "run",
+      "args": ["--manifest-path", "sidecar/Cargo.toml", "--", "--print-config"],
+      "group": "none",
+      "presentation": { "panel": "shared", "reveal": "always" },
+      "problemMatcher": ["$rustc"]
+    },
+    // ── CI-style gate (matches what CI runs) ─────────────────────────────────
+    {
+      "label": "ci: lint + test",
+      "dependsOrder": "sequence",
+      "dependsOn": ["sidecar: fmt check", "sidecar: clippy", "sidecar: test"],
+      "group": "none",
+      "presentation": { "panel": "shared", "reveal": "always" },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "testFilter",
+      "type": "promptString",
+      "description": "Test name filter (substring match)",
+      "default": ""
+    }
+  ]
+}

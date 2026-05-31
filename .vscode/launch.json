@@ -1,0 +1,31 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    // ── Sidecar — debug ───────────────────────────────────────────────────────
+    {
+      "name": "sidecar: debug",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": [
+          "build",
+          "--manifest-path",
+          "sidecar/Cargo.toml"
+        ],
+        "filter": {
+          "name": "tuning-coach-sidecar",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}/sidecar",
+      "env": {
+        "RUST_LOG": "debug",
+        "RUST_BACKTRACE": "1"
+      },
+      "sourceLanguages": [
+        "rust"
+      ]
+    }
+  ]
+}

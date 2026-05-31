@@ -1,0 +1,35 @@
+{
+  // ── Rust (sidecar) ────────────────────────────────────────────────────────
+  "rust-analyzer.linkedProjects": ["sidecar/Cargo.toml"],
+  "rust-analyzer.check.command": "clippy",
+  "rust-analyzer.check.extraArgs": ["--all-targets", "--", "-D", "warnings"],
+  "rust-analyzer.cargo.features": "all",
+  "rust-analyzer.procMacro.enable": true,
+  "rust-analyzer.inlayHints.parameterHints.enable": true,
+  "rust-analyzer.inlayHints.typeHints.enable": true,
+  // ── JavaScript / overlay ──────────────────────────────────────────────────
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[html]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[css]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  // ── TOML ─────────────────────────────────────────────────────────────────
+  "[toml]": {
+    "editor.defaultFormatter": "tamasfe.even-better-toml"
+  },
+  // ── Editor ────────────────────────────────────────────────────────────────
+  "editor.formatOnSave": true,
+  "editor.rulers": [100],
+  // ── File exclusions ───────────────────────────────────────────────────────
+  "files.exclude": {
+    "sidecar/target": true
+  },
+  "search.exclude": {
+    "sidecar/target": true,
+    "**/*.lock": true
+  }
+}
