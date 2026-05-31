@@ -126,6 +126,7 @@ pub struct DashPacket {
     pub brake: u8,
     pub clutch: u8,
     pub hand_brake: u8,
+    /// Raw gear byte from Forza: `0` = Reverse, `1..=10` = forward gears, `11` = Neutral.
     pub gear: u8,
     pub steer: i8,
     pub normalized_driving_line: i8,
