@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/mac-reichelt/tuning-coach/compare/overlay-v0.1.3...overlay-v0.1.4) (2026-06-03)
+
+
+### Features
+
+* **sidecar:** serve overlay from sidecar on single port and enforce WS subprotocol contract ([#109](https://github.com/mac-reichelt/tuning-coach/issues/109)) ([3111ee6](https://github.com/mac-reichelt/tuning-coach/commit/3111ee69d40b4fd33d8a5811000b24f226bb51a7))
+
 ## [0.1.3](https://github.com/mac-reichelt/tuning-coach/compare/overlay-v0.1.2...overlay-v0.1.3) (2026-05-10)
 
 
