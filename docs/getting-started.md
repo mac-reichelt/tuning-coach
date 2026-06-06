@@ -2,10 +2,8 @@
 
 ## Prerequisites
 
-- Rust (latest stable)
-- Node.js (for frontend dev/test tooling; not required to run)
-- Forza Motorsport or Forza Horizon
-- SimHub (optional, for dashboard integration)
+- [Rust](https://www.rust-lang.org/tools/install) (stable)
+- [SimHub](https://www.simhubdash.com/) (optional, for dashboard integration)
 
 ## Clone and Build
 
@@ -15,31 +13,23 @@ cd tuning-coach
 cargo run --release --manifest-path sidecar/Cargo.toml
 ```
 
-## Running the Sidecar
+The sidecar listens on UDP `127.0.0.1:7777` for telemetry and HTTP/WebSocket `127.0.0.1:7778` for the overlay UI and API. The web frontend is served directly by the sidecar—do not open `sidecar/web/index.html` from disk.
 
-The sidecar listens on UDP `127.0.0.1:7777` for telemetry and HTTP/WebSocket `127.0.0.1:7778` for the overlay UI and API. The web frontend is embedded in the sidecar binary and served directly — you do **not** need to run a separate static file server or open the HTML from disk.
+## Using the Overlay
 
-## Accessing the Overlay UI
+- **Browser:** Open [http://127.0.0.1:7778/](http://127.0.0.1:7778/) in your browser.
+- **SimHub:**
+  - Import the dashboard bundle from the `simhub/` directory:
+    - `tuning-coach.djson`
+    - `tuning-coach.djson.metadata`
+    - `tuning-coach.djson.png`
+  - Add a browser/dash overlay pointing to `http://127.0.0.1:7778/`.
 
-- **Browser:** Open [http://127.0.0.1:7778/](http://127.0.0.1:7778/) directly.
-- **SimHub:** Add a browser/dash overlay pointing to [http://127.0.0.1:7778/](http://127.0.0.1:7778/).
+## Overlay Controls
 
-## SimHub Dashboard Bundle
-
-To use the SimHub dashboard, import the bundle from `simhub/`:
-
-- `tuning-coach.djson`
-- `tuning-coach.djson.metadata`
-- `tuning-coach.djson.png`
-
-These files provide a SimHub dashboard item that embeds the overlay UI via a browser pointing to the sidecar's HTTP origin.
-
-## Directory Structure
-
-- `sidecar/web/` — Web frontend (HTML/CSS/JS), embedded and served by the sidecar
-- `simhub/` — SimHub dashboard bundle (.djson, metadata, PNG)
-
-See [docs/adr/0004-overlay-frontend-relocation.md](adr/0004-overlay-frontend-relocation.md) for architectural details.
+- **HUD** — Toggle the main telemetry HUD
+- **Dyno** — Open the guided Dyno panel; follow instructions to collect a power/torque curve
+- **Raw Data** — Open the Raw Telemetry panel to inspect all fields
 
 ## Next Steps
 
