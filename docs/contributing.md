@@ -11,24 +11,28 @@ This project uses agent-driven review and strict CI. Before implementing any cha
 | `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
 | `sidecar/web/**` | `qa-engineer` | Web frontend test discipline (vitest) |
 | `simhub/**` | `qa-engineer` | SimHub dashboard bundle correctness |
-| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security (covered by devops-review.yml and security-review.yml) |
-| Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
-| New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
+| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security |
+| `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
 
-**Note:**
-- The web frontend is now located in `sidecar/web/` and is served directly by the sidecar binary. All UI changes should be made here.
-- The SimHub dashboard bundle is located in `simhub/` and contains only the `.djson` import files and preview images.
-- The overlay directory no longer exists; all references should be updated to the new structure.
+**Before you start:**
+- Read the agent file(s) for your area.
+- Note in your PR description: `Consulted: <agent-name> per routing matrix`.
+- Follow the [conventional commit](https://www.conventionalcommits.org/en/v1.0.0/) style for PR titles and commits.
 
-## Workflow
+## Directory Structure
 
-1. **Consult the agent(s)** for the files you plan to change. Read their agent files before writing code.
-2. **Note in your PR description** which agents you consulted: `Consulted: <agent-name> per routing matrix`.
-3. **Follow conventional commits** for PR titles and commit messages.
-4. **Run tests** for any new or changed public functions, especially in `sidecar/web/` (vitest).
-5. **Check CI** — all agent-driven workflows must pass before merge.
+- `sidecar/` — Rust workspace and server
+- `sidecar/web/` — Web frontend served by the sidecar (HTML/CSS/JS, tests, dev tooling)
+- `simhub/` — SimHub dashboard bundle (`.djson`, `.metadata`, `.png`)
+- `docs/` — Documentation site
 
-## Additional Resources
-- [README.md](../README.md)
-- [Architecture Decision Records](adr/README.md)
-- [API Reference](reference/api.md)
+## Testing
+- Web frontend logic (`sidecar/web/`) must be covered by `vitest` tests.
+- SimHub dashboard bundle changes should be tested in SimHub before PR.
+
+## Release Process
+- The web frontend versions and releases with the sidecar.
+- The SimHub dashboard bundle ships as a release asset attached to the sidecar release.
+
+## Questions?
+Open an issue or ask in discussions.
