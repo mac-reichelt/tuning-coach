@@ -1,45 +1,57 @@
 # Getting Started
 
-Welcome to Tuning Coach! This guide walks you through building and running the
-sidecar and enabling the SimHub overlay.
-
 ## Prerequisites
-- [Rust](https://rustup.rs/) 1.80 or newer
-- SimHub 9.0+
-- Forza Motorsport (PC)
+- Forza Motorsport or Horizon running
+- SimHub (for overlay integration) or a browser
+- Rust toolchain (for sidecar)
 
-## Build and Run the Sidecar
+## Running the Sidecar
+
+Build and run the sidecar:
 
 ```bash
-cargo build --release
-./target/release/tuning-coach-sidecar
+cargo run --release --manifest-path sidecar/Cargo.toml
 ```
 
 The sidecar listens on:
 - UDP telemetry: `127.0.0.1:7777`
 - HTTP + WebSocket overlay/API: `127.0.0.1:7778`
 
-## Install the SimHub Overlay
+## Using the Overlay
 
-Copy `overlay/tuning-coach.djson` and `overlay/tuning-coach.djson.metadata` into:
+The sidecar serves the overlay over HTTP — there is no separate static file
+server. Do not open `overlay/index.html` from disk; the overlay loads its
+assets and opens its WebSocket connection relative to the sidecar origin, so it
+only works when served by the sidecar.
 
-```text
-%ProgramFiles(x86)%\SimHub\DashTemplates\tuning-coach\
-```
+With the sidecar running, open the overlay at `http://127.0.0.1:7778/`:
 
-PowerShell (from repo root):
+- **Browser:** open `http://127.0.0.1:7778/` directly.
+- **SimHub:** add a browser/dash overlay pointing to `http://127.0.0.1:7778/`.
 
-```powershell
-$dst = Join-Path ${env:ProgramFiles(x86)} 'SimHub\DashTemplates\tuning-coach'; New-Item -ItemType Directory -Force -Path $dst | Out-Null; Copy-Item .\overlay\tuning-coach.djson, .\overlay\tuning-coach.djson.metadata -Destination $dst -Force
-```
+### Overlay Controls
 
-Then in SimHub:
-1. Open **Overlays**.
-2. Enable **Tuning Coach**.
-3. Position/resize as desired.
+Top-right cluster:
+- **HUD** — Toggle the main telemetry HUD
+- **Dyno** — Open the guided Dyno panel
+- **Raw Data** — Open the Raw Telemetry panel
 
-The SimHub overlay points to `http://127.0.0.1:7778/`, so no external static
-file server is required.
+### Dyno Panel
+
+1. Click **Dyno** to open the panel.
+2. Follow the instructions:
+   - Stop on a straight, select the target gear, turn off traction control.
+   - Hold stopped for 3 seconds to arm.
+   - Apply full throttle and hold until the rev limiter.
+   - Results (power/torque curves) will appear when complete.
+3. Drag the panel by its header to reposition.
+
+### Raw Telemetry Panel
+
+- Click **Raw Data** to open.
+- Inspect all Forza packet fields live.
+- Drag the panel by its header to reposition.
 
 ## Next Steps
-- [Configuration](configuration.md)
+- [API Reference](reference/api.md)
+- [Lap Validity](reference/lap-validity.md)

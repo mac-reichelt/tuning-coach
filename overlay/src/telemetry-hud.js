@@ -32,7 +32,7 @@ export class TelemetryHud {
   constructor(rootEl) {
     this.#root = rootEl;
     this.#build();
-    this.hide(); // hidden by default per spec
+    this.show(); // visible by default
   }
 
   /** Show the HUD. */
@@ -75,23 +75,34 @@ export class TelemetryHud {
       this.#els.speed.textContent = speed;
     }
 
-    // Gear
+    // Gear — FM2023 encoding: 0=Reverse, 1..10=forward gears, 11=Neutral
     if (data.gear != null) {
-      this.#els.gear.textContent = data.gear === 0 ? 'R' : String(data.gear);
+      const g = data.gear;
+      this.#els.gear.textContent = g === 0 ? 'R' : g === 11 ? 'N' : String(g);
     }
 
     // RPM bar
     if (data.rpm != null && data.rpm_max != null && data.rpm_max > 0) {
       const frac = Math.min(data.rpm / data.rpm_max, 1);
       this.#setBar(this.#els.rpmFill, frac);
-      // Color cue: green → amber → red near rev-limit
+
+      // Color zones relative to detected redline (falls back to max RPM).
+      //   redline        = detected_redline_rpm from dyno, else engine_max_rpm
+      //   power band     = [80 %, 100 %] of redline
+      //   band width     = redline × 0.20
+      //   yellow starts  = 80 % + 85 % of band = redline × 0.97
+      //   red starts     = 80 % + 95 % of band = redline × 0.99
+      const redline = data.dyno?.detected_redline_rpm ?? data.rpm_max;
+      const rpm     = data.rpm;
       let color;
-      if (frac < 0.75) {
-        color = 'var(--color-rpm-safe)';
-      } else if (frac < 0.92) {
-        color = 'var(--color-rpm-warn)';
+      if (rpm < redline * 0.80) {
+        color = '#ffffff';                   // below power band — white
+      } else if (rpm < redline * 0.97) {
+        color = 'var(--color-rpm-safe)';     // in power band — green
+      } else if (rpm < redline * 0.99) {
+        color = 'var(--color-rpm-warn)';     // approaching redline — yellow
       } else {
-        color = 'var(--color-rpm-limit)';
+        color = 'var(--color-rpm-limit)';    // at/over redline — red
       }
       this.#els.rpmFill.style.background = color;
       this.#els.rpmLabel.textContent = `RPM ${Math.round(data.rpm).toLocaleString()}`;

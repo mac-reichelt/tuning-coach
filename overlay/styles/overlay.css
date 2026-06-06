@@ -283,29 +283,33 @@ html, body {
 .hud-lap-delta--negative { color: var(--color-success); }
 .hud-lap-delta--neutral  { color: var(--color-muted); }
 
-/* HUD toggle button */
-#hud-toggle {
-  position: fixed;
-  bottom: 24px;
-  left: 8px;
-  width: 12px;
-  height: 40px;
+/* HUD / Dyno toggle buttons — live beside #raw-toggle in top-right */
+#hud-toggle,
+#dyno-toggle {
   background: rgba(255,255,255,0.08);
-  border: none;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 10px;
   cursor: pointer;
-  transition: background var(--transition-fast);
-  z-index: 999;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+  white-space: nowrap;
 }
 
-#hud-toggle:hover { background: rgba(255,255,255,0.18); }
+#hud-toggle:hover,
+#dyno-toggle:hover { background: rgba(255,255,255,0.18); border-color: var(--color-accent); }
 
 /* ── Lap-status badge ──────────────────────────────────────── */
 
 #lap-status {
   position: fixed;
-  top: 24px;
-  right: 24px;
+  top: 8px;
+  left: 16px;
   padding: 5px 14px;
   border-radius: 999px;
   font-size: 12px;
@@ -469,4 +473,307 @@ html, body {
   padding: 6px 8px;
   border-radius: var(--radius-sm);
   background: rgba(255,255,255,0.03);
+}
+
+/* ── Top-right overlay controls container ──────────────────── */
+
+#overlay-controls {
+  position: fixed;
+  top: 8px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  z-index: 1000;
+}
+
+#overlay-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+/* ── Telemetry-status pill (inside #overlay-controls) ─────── */
+
+#telemetry-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  transition: opacity var(--transition-fast);
+}
+
+#telemetry-status[data-state="none"]   { border-color: var(--color-muted); }
+#telemetry-status[data-state="live"]   { border-color: var(--color-success); }
+#telemetry-status[data-state="paused"] { border-color: var(--color-warning); }
+
+.ts-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+#telemetry-status[data-state="none"]   .ts-dot {
+  background: var(--color-muted);
+}
+
+#telemetry-status[data-state="live"]   .ts-dot {
+  background: var(--color-success);
+  animation: pulse 1.2s infinite;
+}
+
+#telemetry-status[data-state="paused"] .ts-dot {
+  background: var(--color-warning);
+}
+
+/* ── Raw telemetry toggle button (inside #overlay-buttons) ─── */
+
+#raw-toggle {
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+  white-space: nowrap;
+}
+
+#raw-toggle:hover,
+#raw-toggle.active {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+/* ── Raw telemetry panel ─────────────────────────────────────── */
+
+#raw-telemetry-panel {
+  position: fixed;
+  top: 72px;
+  right: 16px;
+  width: 340px;
+  max-height: calc(100vh - 88px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  z-index: 999;
+}
+
+#raw-telemetry-panel[hidden] { display: none; }
+
+.raw-header {
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  border-bottom: 1px solid var(--color-border);
+  background: rgba(255,255,255,0.03);
+  flex-shrink: 0;
+}
+
+.raw-scroll {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.raw-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.raw-table tr:nth-child(even) { background: rgba(255,255,255,0.03); }
+
+.raw-key,
+.raw-val {
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.raw-key {
+  color: var(--color-muted);
+  text-align: left;
+  width: 55%;
+}
+
+.raw-val {
+  color: var(--color-text);
+  text-align: right;
+}
+
+.raw-null {
+  color: var(--color-muted);
+  opacity: 0.5;
+}
+
+/* Draggable panel headers */
+.dyno-header,
+.raw-header {
+  cursor: grab;
+  user-select: none;
+}
+.dyno-header:active,
+.raw-header:active {
+  cursor: grabbing;
+}
+
+/* ── Dyno panel ─────────────────────────────────────────────── */
+
+#dyno-panel {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 420px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  z-index: 900;
+}
+
+#dyno-panel[hidden] { display: none; }
+
+.dyno-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: rgba(255,255,255,0.03);
+}
+
+.dyno-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-accent);
+}
+
+.dyno-header-btns {
+  display: flex;
+  gap: 6px;
+}
+
+.dyno-btn {
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.dyno-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+.dyno-instructions {
+  padding: 10px 12px;
+  font-size: 11px;
+  color: var(--color-text);
+  line-height: 1.55;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Stop-timer progress bar (waiting_for_ready phase) */
+.dyno-stop-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dyno-stop-progress-wrap[hidden] { display: none; }
+
+.dyno-stop-progress-track {
+  flex: 1;
+  height: 6px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.dyno-stop-progress-fill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 3px;
+  transition: width 200ms linear;
+}
+
+.dyno-stop-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.dyno-graph-wrap { padding: 8px 12px 12px; }
+.dyno-graph-wrap[hidden] { display: none; }
+
+.dyno-canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: var(--radius-sm);
+  background: rgba(0,0,0,0.25);
+}
+
+.dyno-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.dyno-stat {
+  background: rgba(255,255,255,0.03);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dyno-stat-label {
+  font-size: 10px;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dyno-stat-val {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
 }

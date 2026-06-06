@@ -78,7 +78,7 @@ length of a field is `end - start`. So `0–4` means bytes 0, 1, 2, 3 (an `i32`)
 | 304–305 | u8 | Brake | 0..255 |
 | 305–306 | u8 | Clutch | 0..255 |
 | 306–307 | u8 | HandBrake | 0..255 |
-| 307–308 | u8 | Gear | 0=R, 1..N |
+| 307–308 | u8 | Gear | 0=R (Reverse), 1..10=forward gears, 11=N (Neutral) |
 | 308–309 | i8 | Steer | -127..127 |
 | 309–310 | i8 | NormalizedDrivingLine | -127..127 |
 | 310–311 | i8 | NormalizedAIBrakeDifference | -127..127 |

@@ -1,4 +1,7 @@
+#![recursion_limit = "256"]
+
 use std::{
+    collections::BTreeMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
     sync::{
@@ -211,6 +214,8 @@ pub(crate) struct AppState {
     pit_runtime: Arc<Mutex<Option<PitStopRuntime>>>,
     suppress_heuristics_tx: watch::Sender<bool>,
     session_state_tx: broadcast::Sender<session_state::SessionStateChanged>,
+    dyno_tx: broadcast::Sender<Value>,
+    dyno_reset_tx: broadcast::Sender<()>,
     telemetry_hz: u16,
 }
 
@@ -224,6 +229,10 @@ impl AppState {
             return;
         }
         let _ = self.recommendation_tx.send(payload);
+    }
+
+    fn emit_dyno_update(&self, payload: Value) {
+        let _ = self.dyno_tx.send(payload);
     }
 
     pub(crate) fn current_lap_context(&self) -> Option<LapContext> {
@@ -388,6 +397,8 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         pit_runtime: Arc::new(Mutex::new(None)),
         suppress_heuristics_tx: watch::channel(false).0,
         session_state_tx: broadcast::channel(256).0,
+        dyno_tx: broadcast::channel(64).0,
+        dyno_reset_tx: broadcast::channel(16).0,
         telemetry_hz: config.telemetry_hz,
     };
 
@@ -404,6 +415,7 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
             post(admin_test_emit_recommendation),
         )
         .nest("/api/v1/hotkeys", hotkeys::router())
+        .route("/api/v1/dyno/reset", post(dyno_reset))
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http().make_span_with(
             move |request: &axum::http::Request<_>| {
@@ -484,6 +496,7 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         },
         env!("CARGO_PKG_VERSION"),
     ));
+    let telemetry_bridge_task = tokio::spawn(telemetry_bridge_loop(state.clone()));
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal(state))
@@ -498,6 +511,9 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
     session_state_task
         .await
         .context("session state task panicked")??;
+    telemetry_bridge_task
+        .await
+        .context("telemetry bridge task panicked")??;
 
     Ok(())
 }
@@ -556,6 +572,11 @@ async fn health() -> impl IntoResponse {
     Json(HealthResponse { status: "ok" })
 }
 
+async fn dyno_reset(State(state): State<AppState>) -> impl IntoResponse {
+    let _ = state.dyno_reset_tx.send(());
+    axum::http::StatusCode::OK
+}
+
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.protocols(["tuning-coach.v1"])
         .on_upgrade(move |socket| ws_connection_loop(socket, state))
@@ -566,6 +587,8 @@ async fn ws_connection_loop(mut socket: WebSocket, state: AppState) {
     let mut shutdown_rx = state.shutdown_tx.subscribe();
     let mut recommendation_rx = state.recommendation_tx.subscribe();
     let mut lap_validity_rx = state.lap_validity_tx.subscribe();
+    let mut session_state_rx = state.session_state_tx.subscribe();
+    let mut dyno_rx = state.dyno_tx.subscribe();
     let hello = HelloMessage {
         r#type: "hello",
         schema_version: SCHEMA_VERSION,
@@ -660,6 +683,39 @@ async fn ws_connection_loop(mut socket: WebSocket, state: AppState) {
                             if send_event(&mut socket, event_type, &payload).await.is_err() {
                                 break;
                             }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            session_ev = session_state_rx.recv() => {
+                match session_ev {
+                    Ok(change) => {
+                        let maybe_type = match change.to {
+                            session_state::SessionState::InRace => Some("session_started"),
+                            session_state::SessionState::Finished => Some("session_ended"),
+                            _ => None,
+                        };
+                        if let Some(event_type) = maybe_type {
+                            let payload = serde_json::json!({
+                                "session_id": change.session_id,
+                                "at_ms": change.at_ms,
+                            });
+                            if send_event(&mut socket, event_type, &payload).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            dyno_ev = dyno_rx.recv() => {
+                match dyno_ev {
+                    Ok(payload) => {
+                        if send_event(&mut socket, "dyno_update", &payload).await.is_err() {
+                            break;
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => {}
@@ -768,6 +824,466 @@ async fn admin_test_emit_recommendation(State(state): State<AppState>) -> impl I
     Json(InjectEventResponse {
         emitted: "recommendation",
     })
+}
+
+// ── Telemetry bridge ────────────────────────────────────────
+
+/// Convert a non-finite f32 to 0.0 for HUD display fields.
+#[inline]
+fn jf(v: f32) -> f64 {
+    if v.is_finite() {
+        f64::from(v)
+    } else {
+        0.0
+    }
+}
+
+/// Convert an f32 to a JSON number, or null if non-finite.
+#[inline]
+fn raw_f(v: f32) -> Value {
+    serde_json::Number::from_f64(f64::from(v))
+        .map(Value::Number)
+        .unwrap_or(Value::Null)
+}
+
+/// Convert an Option<f32> to a JSON number or null.
+#[inline]
+fn raw_fo(v: Option<f32>) -> Value {
+    v.and_then(|f| serde_json::Number::from_f64(f64::from(f)))
+        .map(Value::Number)
+        .unwrap_or(Value::Null)
+}
+
+/// Map a lap validity event to the overlay lap_status string.
+fn lap_event_to_status(event: &lap_validity::LapValidityEvent) -> &'static str {
+    match event {
+        lap_validity::LapValidityEvent::LapDirtyDetected { .. } => "dirty",
+        lap_validity::LapValidityEvent::LapRewindDetected { .. } => "dirty",
+        lap_validity::LapValidityEvent::LapCleanMarked { .. } => "valid",
+        lap_validity::LapValidityEvent::PitStopStarted { .. } => "pit",
+        lap_validity::LapValidityEvent::PitStopEnded { .. } => "valid",
+        lap_validity::LapValidityEvent::SessionResetDetected { .. } => "reset",
+    }
+}
+
+// ── Dyno collector ───────────────────────────────────────────
+
+const DYNO_BIN_RPM: u32 = 50;
+const DYNO_STOP_SECS: f32 = 3.0;
+const DYNO_THROTTLE_MIN: u8 = 242;
+const DYNO_REDLINE_DROP_RATIO: f32 = 0.03;
+const DYNO_POWER_BAND_FRAC: f32 = 0.80;
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum DynoPhase {
+    WaitingForReady,
+    ReadyToGo,
+    Collecting,
+    Complete,
+}
+
+struct DynoCollector {
+    phase: DynoPhase,
+    car_ordinal: Option<i32>,
+    drivetrain: i32,
+    target_gear: u8,
+    stopped_secs: f32,
+    bins: BTreeMap<u32, (f32, f32)>,
+    prev_rpm: f32,
+    peak_rpm: f32,
+    collecting_gear: u8,
+    pub detected_redline: Option<f32>,
+    pub power_band_start: Option<f32>,
+}
+
+impl DynoCollector {
+    fn new() -> Self {
+        Self {
+            phase: DynoPhase::WaitingForReady,
+            car_ordinal: None,
+            drivetrain: 2,
+            target_gear: 1,
+            stopped_secs: 0.0,
+            bins: BTreeMap::new(),
+            prev_rpm: 0.0,
+            peak_rpm: 0.0,
+            collecting_gear: 1,
+            detected_redline: None,
+            power_band_start: None,
+        }
+    }
+
+    fn target_gear_for_drivetrain(dt: i32) -> u8 {
+        if dt == 1 {
+            2
+        } else {
+            1
+        }
+    }
+
+    fn reset_to_waiting(&mut self) {
+        self.phase = DynoPhase::WaitingForReady;
+        self.bins.clear();
+        self.stopped_secs = 0.0;
+        self.peak_rpm = 0.0;
+        self.prev_rpm = 0.0;
+        self.detected_redline = None;
+        self.power_band_start = None;
+    }
+
+    fn compute_derived(&mut self) {
+        if self.bins.is_empty() {
+            return;
+        }
+        let peak_power = self.bins.values().map(|(p, _)| *p).fold(0.0f32, f32::max);
+        if peak_power <= 0.0 {
+            return;
+        }
+        let threshold = peak_power * DYNO_POWER_BAND_FRAC;
+        self.power_band_start = self
+            .bins
+            .iter()
+            .find(|(_, (p, _))| *p >= threshold)
+            .map(|(rpm, _)| *rpm as f32);
+    }
+
+    fn phase_name(&self) -> &'static str {
+        match self.phase {
+            DynoPhase::WaitingForReady => "waiting_for_ready",
+            DynoPhase::ReadyToGo => "ready_to_go",
+            DynoPhase::Collecting => "collecting",
+            DynoPhase::Complete => "complete",
+        }
+    }
+
+    fn dyno_status_fields(&self) -> Value {
+        serde_json::json!({
+            "phase": self.phase_name(),
+            "target_gear": self.target_gear,
+            "drivetrain": self.drivetrain,
+            "detected_redline_rpm": self.detected_redline.map(|r| r as u32),
+            "power_band_start_rpm": self.power_band_start.map(|r| r as u32),
+            "stopped_progress": (self.stopped_secs / DYNO_STOP_SECS).min(1.0),
+        })
+    }
+
+    fn to_update_payload(&self) -> Value {
+        let bins_arr: Vec<Value> = self
+            .bins
+            .iter()
+            .map(|(rpm, (pw, tq))| {
+                serde_json::json!({
+                    "rpm": rpm,
+                    "power_w": raw_f(*pw),
+                    "torque_nm": raw_f(*tq),
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "phase": self.phase_name(),
+            "target_gear": self.target_gear,
+            "drivetrain": self.drivetrain,
+            "detected_redline_rpm": self.detected_redline.map(|r| r as u32),
+            "power_band_start_rpm": self.power_band_start.map(|r| r as u32),
+            "bins": bins_arr,
+        })
+    }
+
+    /// Returns true if a dyno_update WS message should be emitted.
+    fn update(&mut self, dash: &telemetry::DashPacket, dt_secs: f32) -> bool {
+        let sled = &dash.sled;
+        let rpm = sled.current_engine_rpm;
+        let speed = dash.speed;
+        let gear = dash.gear;
+        let accel = dash.accel;
+        let car_ordinal = sled.car_ordinal;
+        let drivetrain = sled.drivetrain_type;
+
+        // New car — reset everything
+        if Some(car_ordinal) != self.car_ordinal {
+            self.car_ordinal = Some(car_ordinal);
+            self.drivetrain = drivetrain;
+            self.target_gear = Self::target_gear_for_drivetrain(drivetrain);
+            self.reset_to_waiting();
+            return true;
+        }
+
+        let prev_phase = self.phase.clone();
+        let mut bins_changed = false;
+
+        match self.phase {
+            DynoPhase::WaitingForReady => {
+                // < 0.05 m/s ≈ 0.18 kph — treats near-zero as stopped
+                if speed.abs() < 0.05 && gear == self.target_gear {
+                    self.stopped_secs += dt_secs;
+                    if self.stopped_secs >= DYNO_STOP_SECS {
+                        self.phase = DynoPhase::ReadyToGo;
+                    }
+                } else {
+                    self.stopped_secs = 0.0;
+                }
+            }
+            DynoPhase::ReadyToGo => {
+                if speed.abs() >= 0.05 || gear != self.target_gear {
+                    self.stopped_secs = 0.0;
+                    self.phase = DynoPhase::WaitingForReady;
+                } else if accel >= DYNO_THROTTLE_MIN {
+                    self.phase = DynoPhase::Collecting;
+                    self.collecting_gear = gear;
+                    self.peak_rpm = rpm;
+                    self.prev_rpm = rpm;
+                }
+            }
+            DynoPhase::Collecting => {
+                if gear != self.collecting_gear {
+                    // Gear change aborts the pull
+                    self.stopped_secs = 0.0;
+                    self.phase = DynoPhase::WaitingForReady;
+                } else if accel >= DYNO_THROTTLE_MIN {
+                    if rpm >= self.prev_rpm * (1.0 - DYNO_REDLINE_DROP_RATIO) {
+                        // RPM rising or stable — valid sample
+                        let bucket = ((rpm / DYNO_BIN_RPM as f32).round() as u32) * DYNO_BIN_RPM;
+                        let entry = self.bins.entry(bucket).or_insert((0.0, 0.0));
+                        if dash.power > entry.0 || dash.torque > entry.1 {
+                            if dash.power > entry.0 {
+                                entry.0 = dash.power;
+                            }
+                            if dash.torque > entry.1 {
+                                entry.1 = dash.torque;
+                            }
+                            bins_changed = true;
+                        }
+                        if rpm > self.peak_rpm {
+                            self.peak_rpm = rpm;
+                        }
+                    } else {
+                        // RPM dropped ≥3% at full throttle = limiter bounce → complete
+                        self.detected_redline = Some(self.peak_rpm);
+                        self.compute_derived();
+                        self.phase = DynoPhase::Complete;
+                        bins_changed = true;
+                    }
+                }
+                self.prev_rpm = rpm;
+            }
+            DynoPhase::Complete => {}
+        }
+
+        bins_changed || self.phase != prev_phase
+    }
+}
+
+/// Convert a [`DashPacket`] to the overlay WS telemetry JSON schema.
+///
+/// All f32 fields are sanitized: non-finite values become 0.0 in HUD fields
+/// and `null` in raw fields to avoid JSON serialization panics.
+fn dash_to_overlay_json(dash: &telemetry::DashPacket, lap_status: &str, dyno: &Value) -> Value {
+    let s = &dash.sled;
+
+    // Build the raw block imperatively to avoid serde_json::json! recursion limits.
+    let mut raw = serde_json::Map::with_capacity(80);
+    macro_rules! ri {
+        ($k:expr, $v:expr) => {
+            raw.insert($k.to_string(), Value::from($v));
+        };
+    }
+    macro_rules! rf {
+        ($k:expr, $v:expr) => {
+            raw.insert($k.to_string(), raw_f($v));
+        };
+    }
+    macro_rules! rfo {
+        ($k:expr, $v:expr) => {
+            raw.insert($k.to_string(), raw_fo($v));
+        };
+    }
+
+    ri!("timestamp_ms", s.timestamp_ms);
+    rf!("engine_max_rpm", s.engine_max_rpm);
+    rf!("engine_idle_rpm", s.engine_idle_rpm);
+    rf!("current_engine_rpm", s.current_engine_rpm);
+    rf!("accel_x", s.acceleration_x);
+    rf!("accel_y", s.acceleration_y);
+    rf!("accel_z", s.acceleration_z);
+    rf!("vel_x", s.velocity_x);
+    rf!("vel_y", s.velocity_y);
+    rf!("vel_z", s.velocity_z);
+    rf!("ang_vel_x", s.angular_velocity_x);
+    rf!("ang_vel_y", s.angular_velocity_y);
+    rf!("ang_vel_z", s.angular_velocity_z);
+    rf!("yaw", s.yaw);
+    rf!("pitch", s.pitch);
+    rf!("roll", s.roll);
+    rf!("susp_norm_fl", s.normalized_suspension_travel_front_left);
+    rf!("susp_norm_fr", s.normalized_suspension_travel_front_right);
+    rf!("susp_norm_rl", s.normalized_suspension_travel_rear_left);
+    rf!("susp_norm_rr", s.normalized_suspension_travel_rear_right);
+    rf!("tire_slip_ratio_fl", s.tire_slip_ratio_front_left);
+    rf!("tire_slip_ratio_fr", s.tire_slip_ratio_front_right);
+    rf!("tire_slip_ratio_rl", s.tire_slip_ratio_rear_left);
+    rf!("tire_slip_ratio_rr", s.tire_slip_ratio_rear_right);
+    rf!("wheel_rot_speed_fl", s.wheel_rotation_speed_front_left);
+    rf!("wheel_rot_speed_fr", s.wheel_rotation_speed_front_right);
+    rf!("wheel_rot_speed_rl", s.wheel_rotation_speed_rear_left);
+    rf!("wheel_rot_speed_rr", s.wheel_rotation_speed_rear_right);
+    ri!("on_rumble_fl", s.wheel_on_rumble_strip_front_left);
+    ri!("on_rumble_fr", s.wheel_on_rumble_strip_front_right);
+    ri!("on_rumble_rl", s.wheel_on_rumble_strip_rear_left);
+    ri!("on_rumble_rr", s.wheel_on_rumble_strip_rear_right);
+    rf!("puddle_fl", s.wheel_in_puddle_depth_front_left);
+    rf!("puddle_fr", s.wheel_in_puddle_depth_front_right);
+    rf!("puddle_rl", s.wheel_in_puddle_depth_rear_left);
+    rf!("puddle_rr", s.wheel_in_puddle_depth_rear_right);
+    rf!("surface_rumble_fl", s.surface_rumble_front_left);
+    rf!("surface_rumble_fr", s.surface_rumble_front_right);
+    rf!("surface_rumble_rl", s.surface_rumble_rear_left);
+    rf!("surface_rumble_rr", s.surface_rumble_rear_right);
+    rf!("slip_angle_fl", s.tire_slip_angle_front_left);
+    rf!("slip_angle_fr", s.tire_slip_angle_front_right);
+    rf!("slip_angle_rl", s.tire_slip_angle_rear_left);
+    rf!("slip_angle_rr", s.tire_slip_angle_rear_right);
+    rf!("combined_slip_fl", s.tire_combined_slip_front_left);
+    rf!("combined_slip_fr", s.tire_combined_slip_front_right);
+    rf!("combined_slip_rl", s.tire_combined_slip_rear_left);
+    rf!("combined_slip_rr", s.tire_combined_slip_rear_right);
+    rf!("susp_travel_m_fl", s.suspension_travel_meters_front_left);
+    rf!("susp_travel_m_fr", s.suspension_travel_meters_front_right);
+    rf!("susp_travel_m_rl", s.suspension_travel_meters_rear_left);
+    rf!("susp_travel_m_rr", s.suspension_travel_meters_rear_right);
+    ri!("car_ordinal", s.car_ordinal);
+    ri!("car_class", s.car_class);
+    ri!("car_pi", s.car_performance_index);
+    ri!("drivetrain", s.drivetrain_type);
+    ri!("num_cylinders", s.num_cylinders);
+    rf!("pos_x", dash.position_x);
+    rf!("pos_y", dash.position_y);
+    rf!("pos_z", dash.position_z);
+    rf!("speed_mps", dash.speed);
+    rf!("power_w", dash.power);
+    rf!("torque_nm", dash.torque);
+    rf!("tire_temp_fl_f", dash.tire_temp_front_left);
+    rf!("tire_temp_fr_f", dash.tire_temp_front_right);
+    rf!("tire_temp_rl_f", dash.tire_temp_rear_left);
+    rf!("tire_temp_rr_f", dash.tire_temp_rear_right);
+    rf!("boost_bar", dash.boost);
+    rf!("fuel", dash.fuel);
+    rf!("dist_m", dash.distance_traveled);
+    rf!("best_lap_s", dash.best_lap);
+    rf!("last_lap_s", dash.last_lap);
+    rf!("current_lap_s", dash.current_lap);
+    rf!("race_time_s", dash.current_race_time);
+    ri!("lap_number", dash.lap_number);
+    ri!("race_pos", dash.race_position);
+    ri!("accel_raw", dash.accel);
+    ri!("brake_raw", dash.brake);
+    ri!("clutch_raw", dash.clutch);
+    ri!("hand_brake_raw", dash.hand_brake);
+    ri!("gear_raw", dash.gear);
+    ri!("steer_raw", dash.steer);
+    ri!("driving_line", dash.normalized_driving_line);
+    ri!("ai_brake_diff", dash.normalized_ai_brake_difference);
+    rfo!("tire_wear_fl", dash.tire_wear_front_left);
+    rfo!("tire_wear_fr", dash.tire_wear_front_right);
+    rfo!("tire_wear_rl", dash.tire_wear_rear_left);
+    rfo!("tire_wear_rr", dash.tire_wear_rear_right);
+    raw.insert(
+        "track_ordinal".to_string(),
+        dash.track_ordinal.map_or(Value::Null, Value::from),
+    );
+
+    serde_json::json!({
+        "speed_kph":  jf(dash.speed * 3.6),
+        "gear":       dash.gear,
+        "rpm":        jf(s.current_engine_rpm),
+        "rpm_max":    jf(s.engine_max_rpm),
+        "rpm_idle":   jf(s.engine_idle_rpm),
+        "throttle":   jf(f32::from(dash.accel) / 255.0),
+        "brake":      jf(f32::from(dash.brake) / 255.0),
+        "clutch":     jf(f32::from(dash.clutch) / 255.0),
+        "hand_brake": jf(f32::from(dash.hand_brake) / 255.0),
+        "steer":      jf(f32::from(dash.steer) / 127.0),
+        "is_race_on": s.is_race_on != 0,
+        "lap_status": lap_status,
+        "lap": {
+            "current_s": jf(dash.current_lap),
+            "best_s":    jf(dash.best_lap),
+            "last_s":    jf(dash.last_lap),
+            "number":    dash.lap_number,
+        },
+        "dyno": dyno,
+        "raw": Value::Object(raw),
+    })
+}
+
+/// Watches UDP-sourced telemetry packets, converts them to the overlay JSON
+/// schema, and publishes each to `telemetry_tx` so connected WS clients
+/// receive live game data at `telemetry_hz`.
+///
+/// Also tracks lap status from `lap_validity_tx` events so the telemetry
+/// payload carries an up-to-date `lap_status` field.
+async fn telemetry_bridge_loop(state: AppState) -> anyhow::Result<()> {
+    let mut packet_rx = state.latest_telemetry_tx.subscribe();
+    let mut lap_validity_rx = state.lap_validity_tx.subscribe();
+    let mut shutdown_rx = state.shutdown_tx.subscribe();
+    let mut dyno_reset_rx = state.dyno_reset_tx.subscribe();
+    let mut current_lap_status = "unknown".to_string();
+    let mut last_lap_number: Option<u16> = None;
+    let mut dyno = DynoCollector::new();
+    let mut last_packet_at: Option<std::time::Instant> = None;
+
+    loop {
+        tokio::select! {
+            _ = shutdown_rx.recv() => break,
+            _ = dyno_reset_rx.recv() => {
+                dyno.reset_to_waiting();
+                state.emit_dyno_update(dyno.to_update_payload());
+            }
+            event = lap_validity_rx.recv() => {
+                match event {
+                    Ok(ev) => {
+                        current_lap_status = lap_event_to_status(&ev).to_string();
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            changed = packet_rx.changed() => {
+                if changed.is_err() {
+                    break;
+                }
+                let packet = packet_rx.borrow_and_update().clone();
+                if let Some(telemetry::TelemetryPacket::Dash(dash)) = packet {
+                    // Compute dt for dyno timing
+                    let now = std::time::Instant::now();
+                    let dt_secs = last_packet_at
+                        .map(|t| now.duration_since(t).as_secs_f32().min(0.5))
+                        .unwrap_or(0.0);
+                    last_packet_at = Some(now);
+
+                    // Lap number change → reset lap status
+                    if Some(dash.lap_number) != last_lap_number {
+                        if last_lap_number.is_some() {
+                            current_lap_status = "unknown".to_string();
+                        }
+                        last_lap_number = Some(dash.lap_number);
+                    }
+
+                    // Update dyno collector
+                    let should_emit_dyno = dyno.update(&dash, dt_secs);
+                    if should_emit_dyno {
+                        state.emit_dyno_update(dyno.to_update_payload());
+                    }
+
+                    let dyno_status = dyno.dyno_status_fields();
+                    let payload = dash_to_overlay_json(&dash, &current_lap_status, &dyno_status);
+                    state.emit_telemetry(payload);
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn shutdown_signal(state: AppState) {
