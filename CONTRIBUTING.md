@@ -1,53 +1,62 @@
 # Contributing
 
-This project uses agent-driven review workflows to ensure quality, security, and correctness. Please follow these steps when contributing:
+Thank you for your interest in contributing! This guide covers how to set up your environment, submit changes, and understand the repository's CI and merge requirements.
 
-## 1. Agent Routing Matrix
+## Getting Started
 
-Before making changes, consult the agent routing matrix to determine which agent(s) you need to read and reference in your PR:
+**Clone the repository:**
 
-| Path glob | Agent(s) to consult before editing | Rationale |
-|---|---|---|
-| `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs` | `telemetry-expert` | Packet schema is the source of truth; agent file must stay in sync with code |
-| `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**` | `race-engineer` + `telemetry-expert` | Tuning logic must reflect real-world practice + correct telemetry semantics |
-| `sidecar/src/storage*.rs`, `sidecar/migrations/**` | `architect` | Schema migrations need ADR consideration |
-| `docs/adr/**` (new files) | `architect` | New ADRs need review against existing decisions |
-| `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security (covered by devops-review.yml and security-review.yml) |
-| Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
-| New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
-| `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
+```bash
+git clone <repo-url>
+cd <repo-name>
+```
 
-## 2. Automated Review Workflows
+**Install dependencies:**
 
-Your PR will trigger automated review workflows based on the files you change:
+Follow the instructions in [docs/getting-started.md](docs/getting-started.md) for environment setup.
 
-| Workflow | Check name | In-scope when |
-|---|---|---|
-| `.github/workflows/security-review.yml` | `security-review verdict` | Workflow/action files, shell scripts, or security-sensitive file names change |
-| `.github/workflows/qa-review.yml` | `qa-review verdict` | `sidecar/src/**` or `overlay/**` changes without accompanying test-file changes |
-| `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
-| `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
+## Branching and Pull Requests
 
-Out-of-scope PRs post a passing check so branch protection is not blocked.
+- **Create a branch:**
+  ```bash
+  git checkout -b <your-feature-branch>
+  ```
+- **Push your branch:**
+  ```bash
+  git push origin <your-feature-branch>
+  ```
+- **Open a Pull Request:**
+  - Use the PR template provided.
+  - Follow [Conventional Commit](https://www.conventionalcommits.org/en/v1.0.0/) format for PR titles.
 
-## 3. Procedural Steps
+## CI and Merge Requirements
 
-- **Fork and clone** the repository.
-- **Create a branch** for your changes.
-- **Consult agent files** in `.github/agents/` as per the routing matrix.
-- **Document agent consultation** in your PR description: `Consulted: <agent-name> per routing matrix`.
-- **Add or update tests** for any new or changed public functions/modules.
-- **Submit your PR** and respond to agent review feedback.
+This repository uses GitHub Actions for CI checks. The following must pass before a PR can be merged:
 
-## 4. Additional Guidelines
+- **CodeQL Security Analysis:**
+  - All PRs must pass the `codeql-gate` status check.
+  - For PRs authored by Dependabot, `codeql-gate` accepts a neutral or success conclusion from CodeQL.
+  - For all other PRs, a success conclusion is required.
+  - The gate never checks out or runs PR code; it only evaluates the CodeQL check status.
+- **PR Title Check:**
+  - PR titles must follow conventional commit format.
+  - Dependabot PRs are exempt from this check.
+- **Auto-merge:**
+  - PRs labeled `automerge` or authored by Dependabot are eligible for auto-merge if all required checks pass.
 
-- **ADR:** New architecture decisions go in `docs/adr/`.
-- **Security:** Changes involving authentication, secrets, or cryptography require security review.
-- **CI/CD:** Workflow or action changes require devops and security review.
-- **Testing:** All new public interfaces must have corresponding tests.
+## Code Style
 
-## Reference
-- [docs/contributing.md](docs/contributing.md)
-- [Agent files](.github/agents/)
-- [Architecture Decision Records](docs/adr/)
-- [README.md](README.md)
+- Follow the style and conventions outlined in [docs/contributing.md](docs/contributing.md).
+- Write clear, concise commit messages.
+
+## Review Process
+
+- All PRs require review and approval.
+- Address reviewer comments promptly.
+
+## License
+
+Contributions are accepted under the project's license. See [LICENSE](LICENSE).
+
+---
+For more details, see [docs/contributing.md](docs/contributing.md).
