@@ -10,9 +10,16 @@ permissions:
 
 jobs:
   enable-automerge:
+    # Enable auto-merge for PRs explicitly labeled `automerge`, and for all
+    # Dependabot PRs. The Dependabot catch-all covers security updates and any
+    # directory not enumerated in dependabot.yml (which never receive the
+    # `automerge` label), so dependency bumps merge without manual intervention.
     if: |
-      contains(github.event.pull_request.labels.*.name, 'automerge') &&
-      !github.event.pull_request.draft
+      !github.event.pull_request.draft &&
+      (
+        contains(github.event.pull_request.labels.*.name, 'automerge') ||
+        github.event.pull_request.user.login == 'dependabot[bot]'
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Enable squash auto-merge
