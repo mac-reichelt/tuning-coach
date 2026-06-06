@@ -7,7 +7,10 @@ use axum::{
 use rust_embed::RustEmbed;
 
 #[derive(RustEmbed)]
-#[folder = "../overlay/"]
+#[folder = "web/"]
+#[include = "index.html"]
+#[include = "src/*"]
+#[include = "styles/*"]
 struct OverlayAssets;
 
 pub async fn index() -> impl IntoResponse {

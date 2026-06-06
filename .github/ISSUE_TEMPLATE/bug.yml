@@ -40,15 +40,10 @@ body:
   - type: input
     id: sidecar-version
     attributes:
-      label: Sidecar version
-      placeholder: "sidecar v0.1.0"
+      label: tuning-coach version
+      placeholder: "v0.1.0"
     validations:
       required: true
-  - type: input
-    id: overlay-version
-    attributes:
-      label: Overlay version
-      placeholder: "overlay v0.1.0"
   - type: input
     id: game
     attributes:

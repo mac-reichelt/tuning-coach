@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   sidecar:
-    if: startsWith(github.event.release.tag_name, 'sidecar-v')
+    if: startsWith(github.event.release.tag_name, 'v')
     name: sidecar (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -58,23 +58,20 @@ jobs:
           files: dist/${{ matrix.artifact }}
           tag_name: ${{ github.event.release.tag_name }}
 
-  overlay:
-    if: startsWith(github.event.release.tag_name, 'overlay-v')
+  dashboard:
+    if: startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
-      - name: Stage overlay
+      - name: Package dashboard bundle
         run: |
           mkdir -p dist
-          tar -C overlay -czf dist/tuning-coach-overlay.tar.gz .
-          (cd overlay && zip -r ../dist/tuning-coach-overlay.zip .)
+          (cd simhub && zip -r ../dist/tuning-coach-dashboard.zip .)
 
       - name: Upload to release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
-          files: |
-            dist/tuning-coach-overlay.tar.gz
-            dist/tuning-coach-overlay.zip
+          files: dist/tuning-coach-dashboard.zip
           tag_name: ${{ github.event.release.tag_name }}
