@@ -16,17 +16,20 @@ Tuning Coach overlays live telemetry and tuning recommendations on Forza Motorsp
 Clone and run the sidecar:
 
 ```bash
-git clone https://github.com/<your-org>/tuning-coach.git
+git clone https://github.com/mac-reichelt/tuning-coach.git
 cd tuning-coach
 cargo run --release --manifest-path sidecar/Cargo.toml
 ```
 
-Open the overlay in SimHub or a browser:
+The sidecar listens on UDP `127.0.0.1:7777` (telemetry) and HTTP/WebSocket
+`127.0.0.1:7778` (overlay + API), and serves the overlay directly — no separate
+static file server is needed, and you should not open `overlay/index.html` from
+disk.
 
-```bash
-# SimHub: add overlay/index.html as a browser overlay
-# Browser: open overlay/index.html
-```
+With the sidecar running, open the overlay at `http://127.0.0.1:7778/`:
+
+- **Browser:** open `http://127.0.0.1:7778/` directly.
+- **SimHub:** add a browser/dash overlay pointing to `http://127.0.0.1:7778/`.
 
 ## Overlay Controls
 - **HUD** — Toggle the main telemetry HUD

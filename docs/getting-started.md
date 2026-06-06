@@ -13,9 +13,21 @@ Build and run the sidecar:
 cargo run --release --manifest-path sidecar/Cargo.toml
 ```
 
+The sidecar listens on:
+- UDP telemetry: `127.0.0.1:7777`
+- HTTP + WebSocket overlay/API: `127.0.0.1:7778`
+
 ## Using the Overlay
 
-Open `overlay/index.html` in SimHub as a browser overlay, or directly in a browser.
+The sidecar serves the overlay over HTTP — there is no separate static file
+server. Do not open `overlay/index.html` from disk; the overlay loads its
+assets and opens its WebSocket connection relative to the sidecar origin, so it
+only works when served by the sidecar.
+
+With the sidecar running, open the overlay at `http://127.0.0.1:7778/`:
+
+- **Browser:** open `http://127.0.0.1:7778/` directly.
+- **SimHub:** add a browser/dash overlay pointing to `http://127.0.0.1:7778/`.
 
 ### Overlay Controls
 
