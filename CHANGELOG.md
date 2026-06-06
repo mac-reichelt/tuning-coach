@@ -1,25 +1,14 @@
 # Changelog
 
+All notable changes to this project are documented here.
+
 ## [Unreleased]
 
 ### Added
-- Overlay: Dyno panel for guided in-session power/torque curve collection. Open via the new **Dyno** button; follow on-screen instructions. Results include peak power, peak torque, redline, and power band start.
-- Overlay: Raw Telemetry panel for inspecting all Forza packet fields live. Open via the **Raw Data** button.
-- Overlay: Panels are draggable by their headers.
+- **CI:** Introduced `codeql-gate` workflow. This publishes a `codeql-gate` commit status required by branch protection. For Dependabot PRs, it accepts a neutral or success conclusion from CodeQL; for all other PRs, only success is accepted. This ensures dependency updates are not blocked by neutral CodeQL results.
 
 ### Changed
-- Overlay: Control cluster now includes HUD, Dyno, and Raw Data toggles.
+- **CI:** Updated `auto-merge.yml` to auto-merge PRs labeled `automerge` and all Dependabot PRs, including those not explicitly labeled.
+- **CI:** Updated `pr-title.yml` to skip conventional commit title checks for Dependabot PRs, preventing spurious failures.
 
 ---
-
-## [0.1.6] (2026-06-03)
-
-### Features
-
-* **sidecar:** Serve overlay from sidecar on single port and enforce WS subprotocol contract ([#109](https://github.com/mac-reichelt/tuning-coach/issues/109))
-
----
-
-## [0.1.5] (2026-05-10)
-
-* See package changelogs for details.
