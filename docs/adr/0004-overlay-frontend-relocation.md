@@ -64,7 +64,7 @@ HTTP routes are unchanged.
   eliminating the "overlay = the UI" confusion that motivated this ADR.
 - The served frontend lives next to the server that embeds it; a frontend change
   is correctly a sidecar change and bumps the sidecar version.
-- One release artifact and one version stream (`sidecar-vX.Y.Z`). The broken
+- One release artifact and one version stream (`vX.Y.Z`, the `tuning-coach` package). The broken
   `overlay` node package (no `version` field) is retired.
 - The `#[include]` allowlist guarantees `package-lock.json`/`node_modules`/tests
   can never be baked into the release binary, regardless of future dev files.

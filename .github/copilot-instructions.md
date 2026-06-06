@@ -46,8 +46,9 @@ See `docs/adr/` for architecture decisions.
 - **Conventional Commits required** on all PR titles + commits — enforced by
   `pr-title.yml` workflow.
 - **release-please** drives SemVer + CHANGELOG + tags from commits.
-- **Monorepo mode**: `sidecar` versioned independently (`sidecar-vX.Y.Z`).
-  The web frontend ships inside `sidecar-vX.Y.Z`.
+- **Single package**: `tuning-coach` versioned as `vX.Y.Z`. Each release ships
+  the compiled sidecar binaries **and** the `simhub/` dashboard bundle; the web
+  frontend is embedded in the sidecar binary.
 - **Pre-1.0** (current): `feat`/breaking → minor; `fix`/`perf` → patch.
 - Use `feat!:` + `BREAKING CHANGE:` footer for breaking changes.
 

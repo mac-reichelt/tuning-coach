@@ -9,8 +9,8 @@
   "packages": {
     "sidecar": {
       "release-type": "rust",
-      "package-name": "sidecar",
-      "component": "sidecar"
+      "package-name": "tuning-coach",
+      "include-component-in-tag": false
     }
   },
   "changelog-sections": [

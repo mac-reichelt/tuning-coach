@@ -24,8 +24,8 @@ it. Keep it running while you use the overlay.
 
 Copy these files into your SimHub DashTemplates folder:
 
-- `overlay/tuning-coach.djson`
-- `overlay/tuning-coach.djson.metadata`
+- `simhub/tuning-coach.djson`
+- `simhub/tuning-coach.djson.metadata`
 
 Default destination:
 
@@ -36,7 +36,7 @@ Default destination:
 PowerShell one-liner (from repo root):
 
 ```powershell
-$dst = Join-Path ${env:ProgramFiles(x86)} 'SimHub\DashTemplates\tuning-coach'; New-Item -ItemType Directory -Force -Path $dst | Out-Null; Copy-Item .\overlay\tuning-coach.djson, .\overlay\tuning-coach.djson.metadata -Destination $dst -Force
+$dst = Join-Path ${env:ProgramFiles(x86)} 'SimHub\DashTemplates\tuning-coach'; New-Item -ItemType Directory -Force -Path $dst | Out-Null; Copy-Item .\simhub\tuning-coach.djson, .\simhub\tuning-coach.djson.metadata -Destination $dst -Force
 ```
 
 ### 3) Enable overlay in SimHub
@@ -47,6 +47,17 @@ $dst = Join-Path ${env:ProgramFiles(x86)} 'SimHub\DashTemplates\tuning-coach'; N
 
 The `.djson` points SimHub to `http://127.0.0.1:7778/`, which serves the HTML,
 JS modules, and CSS directly from the sidecar.
+
+## Customizing the overlay
+
+The overlay UI in `sidecar/web/` is a **reference example** — you can edit or
+fork the HTML, CSS, and JS to suit your own layout and style.
+
+- **Debug builds** (`cargo run`) read files from `sidecar/web/` on disk, so
+  changes to `index.html`, `src/`, or `styles/` show up on the next browser
+  reload without rebuilding the sidecar.
+- **Release builds** (`cargo build --release`) embed the allowlisted files at
+  compile time via `rust_embed`; changes require a rebuild.
 
 ## Development
 

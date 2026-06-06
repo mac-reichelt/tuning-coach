@@ -52,6 +52,13 @@ Top-right cluster:
 - Inspect all Forza packet fields live.
 - Drag the panel by its header to reposition.
 
+### Customizing the overlay UI
+
+The HTML/CSS/JS in `sidecar/web/` is a **reference example** that you can edit
+or fork. Debug builds (`cargo run`) read files from disk, so edits to
+`index.html`, `src/`, or `styles/` are visible on the next browser reload
+without rebuilding. Release builds embed the files at compile time.
+
 ## Next Steps
 - [API Reference](reference/api.md)
 - [Lap Validity](reference/lap-validity.md)

@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   sidecar:
-    if: startsWith(github.event.release.tag_name, 'sidecar-v')
+    if: startsWith(github.event.release.tag_name, 'v')
     name: sidecar (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -59,7 +59,7 @@ jobs:
           tag_name: ${{ github.event.release.tag_name }}
 
   dashboard:
-    if: startsWith(github.event.release.tag_name, 'sidecar-v')
+    if: startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
