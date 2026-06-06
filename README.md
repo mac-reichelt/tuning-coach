@@ -42,6 +42,3 @@ With the sidecar running, open the overlay at `http://127.0.0.1:7778/`:
 
 ## Contributing
 See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## License
-MIT — see [LICENSE](LICENSE).
