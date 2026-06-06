@@ -1,54 +1,47 @@
 # Getting Started
 
-## Installation
+## Prerequisites
 
-**Clone the repo:**
+- Rust (latest stable)
+- Node.js (for frontend dev/test tooling; not required to run)
+- Forza Motorsport or Forza Horizon
+- SimHub (optional, for dashboard integration)
+
+## Clone and Build
 
 ```bash
 git clone https://github.com/mac-reichelt/tuning-coach.git
 cd tuning-coach
-```
-
-**Build and run the sidecar:**
-
-```bash
 cargo run --release --manifest-path sidecar/Cargo.toml
 ```
 
-The sidecar listens on:
-- UDP `127.0.0.1:7777` — Forza telemetry
-- HTTP/WebSocket `127.0.0.1:7778` — overlay UI + API
+## Running the Sidecar
 
-## Using the Overlay
+The sidecar listens on UDP `127.0.0.1:7777` for telemetry and HTTP/WebSocket `127.0.0.1:7778` for the overlay UI and API. The web frontend is embedded in the sidecar binary and served directly — you do **not** need to run a separate static file server or open the HTML from disk.
 
-The sidecar serves the overlay over HTTP — there is no separate static file server. Do not open `sidecar/web/index.html` from disk; the overlay loads its assets and opens its WebSocket connection relative to the sidecar origin, so it only works when served by the sidecar.
+## Accessing the Overlay UI
 
-**Open the overlay:**
+- **Browser:** Open [http://127.0.0.1:7778/](http://127.0.0.1:7778/) directly.
+- **SimHub:** Add a browser/dash overlay pointing to [http://127.0.0.1:7778/](http://127.0.0.1:7778/).
 
-```
-http://127.0.0.1:7778/
-```
+## SimHub Dashboard Bundle
 
-**SimHub users:** Import the dashboard bundle from `simhub/`:
+To use the SimHub dashboard, import the bundle from `simhub/`:
+
 - `tuning-coach.djson`
 - `tuning-coach.djson.metadata`
 - `tuning-coach.djson.png`
 
-## Overlay Features
+These files provide a SimHub dashboard item that embeds the overlay UI via a browser pointing to the sidecar's HTTP origin.
 
-Top-left cluster:
-- Live lap status (valid/invalid, sector times)
-- Tuning recommendations (suspension, gearing, aero, etc.)
-- Dyno graph (resettable)
+## Directory Structure
 
-Top-right cluster:
-- Inspect all Forza packet fields live.
-- Drag the panel by its header to reposition.
+- `sidecar/web/` — Web frontend (HTML/CSS/JS), embedded and served by the sidecar
+- `simhub/` — SimHub dashboard bundle (.djson, metadata, PNG)
 
-### Customizing the overlay UI
-
-The HTML/CSS/JS in `sidecar/web/` is a **reference example** that you can edit or fork. Debug builds (`cargo run`) read files from disk, so edits to `index.html`, `src/`, or `styles/` are visible on the next browser reload without rebuilding. Release builds embed the files at compile time.
+See [docs/adr/0004-overlay-frontend-relocation.md](adr/0004-overlay-frontend-relocation.md) for architectural details.
 
 ## Next Steps
+
+- [Lap Validity Reference](reference/lap-validity.md)
 - [API Reference](reference/api.md)
-- [Lap Validity](reference/lap-validity.md)
