@@ -1,0 +1,91 @@
+name: codeql-gate
+
+# Publishes a `codeql-gate` commit status that branch protection requires in place
+# of the raw `CodeQL` check. CodeQL default setup returns a NEUTRAL conclusion on
+# Dependabot PRs (restricted token, nothing first-party to analyze), and branch
+# protection treats neutral as non-passing. This gate accepts that neutral result
+# for Dependabot ONLY, while still requiring a clean `success` for human and
+# Copilot-agent PRs. It is fail-closed: anything other than an accepted CodeQL
+# conclusion publishes a failing status, and it never checks out or runs PR code.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  statuses: write
+  checks: read
+  contents: read
+
+concurrency:
+  group: codeql-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate CodeQL and publish codeql-gate status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # GitHub App id of the CodeQL default-setup check ("GitHub Advanced Security").
+          CODEQL_APP_ID=57789
+          TARGET_URL="https://github.com/$REPO/security/code-scanning?query=pr%3A$PR_NUMBER"
+
+          post_status() {
+            local state="$1" desc="$2"
+            gh api -X POST "repos/$REPO/statuses/$SHA" \
+              -f state="$state" \
+              -f context="codeql-gate" \
+              -f description="$desc" \
+              -f target_url="$TARGET_URL" >/dev/null
+            echo "codeql-gate => $state ($desc)"
+          }
+
+          # Block the merge while we wait for CodeQL to finish.
+          post_status pending "Waiting for CodeQL analysis"
+
+          # Poll for the latest CodeQL check run on this commit to complete (~10 min max).
+          conclusion=""
+          for _ in $(seq 1 40); do
+            line="$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
+              --jq ".check_runs[] | select(.name == \"CodeQL\" and .app.id == $CODEQL_APP_ID) | \"\(.status)|\(.conclusion)\"" \
+              | tail -n1 || true)"
+            status="${line%%|*}"
+            conc="${line##*|}"
+            if [ "$status" = "completed" ] && [ -n "$conc" ] && [ "$conc" != "null" ]; then
+              conclusion="$conc"
+              break
+            fi
+            sleep 15
+          done
+
+          if [ -z "$conclusion" ]; then
+            post_status failure "CodeQL did not complete in time"
+            exit 0
+          fi
+
+          echo "CodeQL conclusion=$conclusion author=$AUTHOR"
+
+          if [ "$AUTHOR" = "dependabot[bot]" ]; then
+            # Dependabot PRs only change dependency manifests/lockfiles; CodeQL has no
+            # first-party code to scan and returns neutral. Accept success or neutral.
+            case "$conclusion" in
+              success|neutral) post_status success "CodeQL $conclusion (Dependabot)" ;;
+              *)               post_status failure "CodeQL $conclusion" ;;
+            esac
+          else
+            # Human and Copilot-agent PRs must have a clean CodeQL analysis.
+            case "$conclusion" in
+              success) post_status success "CodeQL success" ;;
+              *)       post_status failure "CodeQL $conclusion" ;;
+            esac
+          fi
