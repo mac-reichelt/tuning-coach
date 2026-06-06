@@ -34,7 +34,6 @@ With the sidecar running, open the overlay at `http://127.0.0.1:7778/`:
 
 ## Documentation
 - [Getting Started](docs/getting-started.md)
-- [API Reference](docs/reference/api.md)
 - [Lap Validity](docs/reference/lap-validity.md)
 
 ## Status
@@ -43,3 +42,6 @@ With the sidecar running, open the overlay at `http://127.0.0.1:7778/`:
 
 ## Contributing
 See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+MIT — see [LICENSE](LICENSE).
