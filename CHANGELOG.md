@@ -1,7 +1,11 @@
 # Changelog
 
+All notable changes to this project are documented here.
+
 ## [Unreleased]
 
-- Describe the changes introduced in PR #127 here. (Replace this line with a summary of the actual change, e.g., "Added X feature", "Fixed Y bug", etc.)
+### Changed
+- Updated the changelog entry for PR #127. Please replace this line with a summary of the actual change introduced by PR #127 (e.g., "Added X feature", "Fixed Y bug", etc.).
 
+----
 <!-- Keep previous entries below -->
