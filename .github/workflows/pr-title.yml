@@ -9,6 +9,11 @@ permissions:
 
 jobs:
   conventional:
+    # Dependabot generates its own conventional titles (e.g. "chore(deps): Bump
+    # X"), whose capitalized subject trips subjectPattern. This check is not a
+    # required status check, so skipping it for Dependabot avoids a spurious red
+    # X without blocking merges.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
