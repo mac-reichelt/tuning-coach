@@ -1,8 +1,8 @@
 name: qa-review
 
 # LLM-driven QA review. Uses qa-engineer.agent.md as the system prompt.
-# In-scope when source files under sidecar/src/** or overlay/** change but no
-# corresponding test files are also touched. When src changes accompany test
+# In-scope when source files under sidecar/src/** or sidecar/web/** change but
+# no corresponding test files are also touched. When src changes accompany test
 # changes, the PR passes (skip-success). Docs-only PRs are also skipped.
 # All other PRs post a passing skip-success check so this can be a required
 # check without blocking unrelated work.
@@ -54,7 +54,7 @@ jobs:
                   "$f" == *.test.js || "$f" == *.spec.js || \
                   "$f" == *.test.ts || "$f" == *.spec.ts ]]; then
               HAS_TESTS=true
-            elif [[ "$f" == sidecar/src/* || "$f" == overlay/* ]]; then
+            elif [[ "$f" == sidecar/src/* || "$f" == sidecar/web/* ]]; then
               HAS_SRC=true
             fi
           done
@@ -100,7 +100,7 @@ jobs:
               messages: [
                 {
                   role: "system",
-                  content: "You are the tuning-coach QA reviewer. Apply the QA conventions in the supplied qa-engineer.agent.md verbatim. This PR has changed source files under sidecar/src/ or overlay/ WITHOUT adding or updating test files. Your job: identify every new public function, method, or module added or modified; determine whether adequate tests exist; call out specific missing test cases. Use REQUEST_CHANGES if any new public function lacks a test. Use APPROVE if all changed public interfaces have existing or new tests. Use COMMENT for suggestions that do not block merge. Output strict JSON: {\"verdict\":\"APPROVE|REQUEST_CHANGES|COMMENT\",\"summary\":\"string\",\"findings_markdown\":\"string\"}"
+                  content: "You are the tuning-coach QA reviewer. Apply the QA conventions in the supplied qa-engineer.agent.md verbatim. This PR has changed source files under sidecar/src/ or sidecar/web/ WITHOUT adding or updating test files. Your job: identify every new public function, method, or module added or modified; determine whether adequate tests exist; call out specific missing test cases. Use REQUEST_CHANGES if any new public function lacks a test. Use APPROVE if all changed public interfaces have existing or new tests. Use COMMENT for suggestions that do not block merge. Output strict JSON: {\"verdict\":\"APPROVE|REQUEST_CHANGES|COMMENT\",\"summary\":\"string\",\"findings_markdown\":\"string\"}"
                 },
                 {
                   role: "user",

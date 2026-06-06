@@ -11,11 +11,6 @@
       "release-type": "rust",
       "package-name": "sidecar",
       "component": "sidecar"
-    },
-    "overlay": {
-      "release-type": "node",
-      "package-name": "overlay",
-      "component": "overlay"
     }
   },
   "changelog-sections": [

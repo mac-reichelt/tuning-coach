@@ -21,7 +21,8 @@ security-review) handle workflow.
 | Component | Tech | Path |
 |-----------|------|------|
 | Sidecar | Rust 2024 edition, tokio async, axum HTTP/WS | `sidecar/` |
-| Overlay | Vanilla HTML/CSS/JS (SimHub overlay template) | `overlay/` |
+| SimHub dashboard | SimHub-importable `.djson` bundle | `simhub/` |
+| Web frontend | Vanilla HTML/CSS/JS (served by sidecar) | `sidecar/web/` |
 | Storage | SQLite via `rusqlite` (sidecar-owned) | `sidecar/data/` |
 | Docs | Markdown → GitHub Pages (Jekyll) | `docs/` |
 | CI | GitHub Actions | `.github/workflows/` |
@@ -45,8 +46,8 @@ See `docs/adr/` for architecture decisions.
 - **Conventional Commits required** on all PR titles + commits — enforced by
   `pr-title.yml` workflow.
 - **release-please** drives SemVer + CHANGELOG + tags from commits.
-- **Monorepo mode**: `sidecar` and `overlay` versioned independently
-  (`sidecar-vX.Y.Z`, `overlay-vX.Y.Z`).
+- **Monorepo mode**: `sidecar` versioned independently (`sidecar-vX.Y.Z`).
+  The web frontend ships inside `sidecar-vX.Y.Z`.
 - **Pre-1.0** (current): `feat`/breaking → minor; `fix`/`perf` → patch.
 - Use `feat!:` + `BREAKING CHANGE:` footer for breaking changes.
 
@@ -63,13 +64,13 @@ See `docs/adr/` for architecture decisions.
 - HTTP/WS: `axum` + `tokio-tungstenite`
 - SQLite: `rusqlite` with bundled feature; migrations in `sidecar/migrations/`
 
-### JS (overlay)
+### JS (web frontend)
 
-- Vanilla — no build step for the overlay itself
+- Vanilla — no build step for the web frontend itself
 - ES modules, top-level await OK (modern browsers / SimHub uses Chromium)
 - Lint: `eslint` (flat config) + `prettier`
 - Tests: `vitest` for any non-trivial logic
-- DOM-only, no framework — overlay is render-only
+- DOM-only, no framework — frontend is render-only
 
 ### Docs
 
@@ -102,7 +103,7 @@ See `docs/adr/` for architecture decisions.
 | `.github/instructions/MANIFEST.md` | Vendored copilot instructions (security, workflow hardening, cloud-agent playbooks) |
 | `docs/adr/` | Architecture Decision Records |
 | `sidecar/Cargo.toml` | Rust workspace + crate |
-| `overlay/index.html` | SimHub overlay entry |
+| `sidecar/web/index.html` | Web frontend entry |
 | `.github/release-please-config.json` | release-please monorepo config |
 
 ## Agent Routing
@@ -121,7 +122,7 @@ writing code, and note them in your PR description as:
 | `.github/workflows/**`, `.github/actions/**` | `devops-engineer` + `security-review` | CI/CD correctness + security (covered by devops-review.yml and security-review.yml) |
 | Any file with auth, secrets, OIDC, crypto in name or context | `security-review` | OWASP / Zero Trust pass |
 | New crates, new public modules, new sidecar tests | `qa-engineer` | Test strategy + coverage |
-| `overlay/**` (logic changes, not pure CSS) | `qa-engineer` | Overlay test discipline (vitest) |
+| `sidecar/web/**` (logic changes, not pure CSS) | `qa-engineer` | Web frontend test discipline (vitest) |
 
 ### Automated routing
 
@@ -130,7 +131,7 @@ Four path-scoped review workflows enforce this matrix on every PR:
 | Workflow | Check name | In-scope when |
 |---|---|---|
 | `.github/workflows/security-review.yml` | `security-review verdict` | Workflow/action files, shell scripts, or security-sensitive file names change |
-| `.github/workflows/qa-review.yml` | `qa-review verdict` | `sidecar/src/**` or `overlay/**` changes without accompanying test-file changes |
+| `.github/workflows/qa-review.yml` | `qa-review verdict` | `sidecar/src/**` or `sidecar/web/**` changes without accompanying test-file changes |
 | `.github/workflows/telemetry-review.yml` | `telemetry-review verdict` | `sidecar/src/telemetry.rs`, `sidecar/src/forza_*.rs`, or `telemetry-expert.agent.md` changes |
 | `.github/workflows/heuristics-review.yml` | `heuristics-review verdict` | `sidecar/src/heuristics/**`, `sidecar/src/recommendations/**`, or `race-engineer.agent.md` changes |
 
@@ -139,7 +140,7 @@ the checks can be required in branch protection without blocking unrelated work.
 
 ## Anti-Patterns
 
-❌ Adding a build step to the overlay — keep it loadable directly by SimHub.
+❌ Adding a build step to the web frontend — keep it loadable directly by the sidecar.
 ❌ Shared mutable state in the sidecar — use channels/actors.
 ❌ Logging telemetry to stdout in release builds — flood + privacy.
 ❌ Coupling the heuristics engine to the WS layer — keep them separable.

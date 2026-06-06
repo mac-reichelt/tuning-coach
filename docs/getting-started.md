@@ -20,7 +20,7 @@ The sidecar listens on:
 ## Using the Overlay
 
 The sidecar serves the overlay over HTTP — there is no separate static file
-server. Do not open `overlay/index.html` from disk; the overlay loads its
+server. Do not open `sidecar/web/index.html` from disk; the overlay loads its
 assets and opens its WebSocket connection relative to the sidecar origin, so it
 only works when served by the sidecar.
 

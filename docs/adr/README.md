@@ -6,6 +6,7 @@ immutable once accepted; superseding decisions get a new number.
 
 ## Index
 
+- [ADR-0004 — Relocate the served frontend into the sidecar; reserve simhub/ for the dashboard bundle](0004-overlay-frontend-relocation.md) (proposed)
 - [ADR-0002 — Sidecar WebSocket API contract](0002-ws-api-contract.md) (proposed)
 - [ADR-0001 — Sidecar storage schema](0001-storage-schema.md) (accepted)
 

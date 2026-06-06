@@ -65,13 +65,13 @@ jobs:
       - name: Build (release)
         run: cargo build --workspace --release
 
-  overlay:
-    name: overlay
+  web:
+    name: web
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
       run:
-        working-directory: overlay
+        working-directory: sidecar/web
     steps:
       - uses: actions/checkout@v6
 
@@ -91,7 +91,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: overlay/package-lock.json
+          cache-dependency-path: sidecar/web/package-lock.json
 
       - name: Install
         if: steps.check.outputs.present == 'true'

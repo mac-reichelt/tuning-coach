@@ -1,5 +1,7 @@
 # Changelog
 
+> **Frozen.** This changelog covers the `overlay` release package up to v0.1.4. The web frontend now ships inside `sidecar-vX.Y.Z`; see the [sidecar CHANGELOG](../../sidecar/CHANGELOG.md) for ongoing history.
+
 ## [0.1.4](https://github.com/mac-reichelt/tuning-coach/compare/overlay-v0.1.3...overlay-v0.1.4) (2026-06-03)
 
 
