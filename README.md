@@ -22,6 +22,9 @@ The sidecar listens on UDP `127.0.0.1:7777` (telemetry) and HTTP/WebSocket `127.
 
 With the sidecar running, open the overlay at `http://127.0.0.1:7778/`:
 
+- **Browser:** open `http://127.0.0.1:7778/` directly.
+- **SimHub:** add a browser/dash overlay pointing to `http://127.0.0.1:7778/`.
+
 ![Overlay screenshot](docs/img/overlay-screenshot.png)
 
 **SimHub users:** Import the dashboard bundle from `simhub/`:
@@ -40,6 +43,3 @@ With the sidecar running, open the overlay at `http://127.0.0.1:7778/`:
 
 ## Contributing
 See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## License
-MIT — see [LICENSE](LICENSE).
