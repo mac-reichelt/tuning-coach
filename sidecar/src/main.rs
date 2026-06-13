@@ -512,7 +512,7 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         tokio::spawn(replay::replay_loop(
             Arc::new(packets),
             state.latest_telemetry_tx.clone(),
-            state.shutdown_tx.subscribe(),
+            state.shutdown_tx.clone(),
             config.replay_loop,
             config.replay_speed,
         ))
@@ -1352,6 +1352,8 @@ async fn telemetry_bridge_loop(state: AppState) -> anyhow::Result<()> {
 }
 
 async fn shutdown_signal(state: AppState) {
+    let mut shutdown_rx = state.shutdown_tx.subscribe();
+
     #[cfg(unix)]
     let mut sigterm = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
     {
@@ -1365,6 +1367,7 @@ async fn shutdown_signal(state: AppState) {
     #[cfg(unix)]
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {},
+        _ = shutdown_rx.recv() => {},
         _ = async {
             if let Some(sigterm) = &mut sigterm {
                 sigterm.recv().await;
@@ -1377,7 +1380,10 @@ async fn shutdown_signal(state: AppState) {
     }
 
     #[cfg(not(unix))]
-    let _ = tokio::signal::ctrl_c().await;
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {},
+        _ = shutdown_rx.recv() => {},
+    }
 
     info!(module = module_path!(), "shutdown signal received");
     let _ = state.shutdown_tx.send(());

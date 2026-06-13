@@ -316,16 +316,21 @@ fn udp_payload(ip: &[u8]) -> Option<&[u8]> {
 
 /// Replay loop: emit each packet into `latest_packet_tx`, paced by the capture
 /// timing (scaled by `speed`). Repeats while `looping` is set. Stops promptly
-/// on shutdown.
+/// on shutdown. When not looping, broadcasts a shutdown once the capture is
+/// exhausted so the process exits on its own.
 pub async fn replay_loop(
     packets: Arc<Vec<ReplayPacket>>,
     latest_packet_tx: watch::Sender<Option<TelemetryPacket>>,
-    mut shutdown_rx: broadcast::Receiver<()>,
+    shutdown_tx: broadcast::Sender<()>,
     looping: bool,
     speed: f32,
 ) -> anyhow::Result<()> {
+    let mut shutdown_rx = shutdown_tx.subscribe();
     if packets.is_empty() {
         warn!("replay capture contained no Forza telemetry packets; nothing to replay");
+        if !looping {
+            let _ = shutdown_tx.send(());
+        }
         return Ok(());
     }
     let speed = if speed > 0.0 { speed } else { 1.0 };
@@ -349,7 +354,8 @@ pub async fn replay_loop(
         }
         iteration += 1;
         if !looping {
-            info!("telemetry replay finished");
+            info!("telemetry replay finished; signalling shutdown");
+            let _ = shutdown_tx.send(());
             return Ok(());
         }
         info!(iteration, "telemetry replay looping");
