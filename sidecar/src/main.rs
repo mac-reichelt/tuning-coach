@@ -44,6 +44,7 @@ mod hotkeys;
 mod lap_validity;
 mod overlay;
 mod recommendation;
+mod replay;
 mod session_state;
 mod storage;
 mod telemetry;
@@ -63,6 +64,16 @@ struct Cli {
     config: Option<PathBuf>,
     #[arg(long)]
     print_config: bool,
+    /// Replay a packet capture (.pcapng/.pcap) of Forza telemetry instead of
+    /// listening for live UDP. The UDP listener is disabled while replaying.
+    #[arg(long, value_name = "FILE")]
+    replay: Option<PathBuf>,
+    /// Loop the replay capture indefinitely (requires --replay).
+    #[arg(long)]
+    replay_loop: bool,
+    /// Replay speed multiplier (1.0 = real time, 2.0 = twice as fast).
+    #[arg(long, value_name = "FACTOR")]
+    replay_speed: Option<f32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -89,6 +100,16 @@ struct AppConfig {
     bind_address: IpAddr,
     data_dir: PathBuf,
     log_level: String,
+    #[serde(default)]
+    replay_file: Option<PathBuf>,
+    #[serde(default)]
+    replay_loop: bool,
+    #[serde(default = "default_replay_speed")]
+    replay_speed: f32,
+}
+
+fn default_replay_speed() -> f32 {
+    1.0
 }
 
 impl Default for AppConfig {
@@ -117,6 +138,9 @@ impl Default for AppConfig {
             bind_address: IpAddr::V4(Ipv4Addr::LOCALHOST),
             data_dir: PathBuf::from("./data"),
             log_level: "info".to_string(),
+            replay_file: None,
+            replay_loop: false,
+            replay_speed: default_replay_speed(),
         }
     }
 }
@@ -181,6 +205,11 @@ impl AppConfig {
         if self.packet_timeout_ms == 0 {
             return Err(Box::new(figment::Error::from(
                 "packet_timeout_ms must be greater than 0",
+            )));
+        }
+        if !(self.replay_speed.is_finite() && self.replay_speed > 0.0) {
+            return Err(Box::new(figment::Error::from(
+                "replay_speed must be a finite value greater than 0",
             )));
         }
         Ok(())
@@ -341,7 +370,19 @@ struct InjectEventResponse {
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let config = AppConfig::load(cli.config.as_deref())?;
+    let mut config = AppConfig::load(cli.config.as_deref())?;
+    if let Some(replay_file) = cli.replay.clone() {
+        config.replay_file = Some(replay_file);
+    }
+    if cli.replay_loop {
+        config.replay_loop = true;
+    }
+    if let Some(replay_speed) = cli.replay_speed {
+        config.replay_speed = replay_speed;
+    }
+    config
+        .validate()
+        .map_err(|err| anyhow::anyhow!("invalid replay configuration: {err}"))?;
     init_tracing(&config)?;
 
     info!(
@@ -446,26 +487,46 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
     let listener = TcpListener::bind(addr)
         .await
         .with_context(|| format!("failed to bind ws server on {addr}"))?;
-    let udp_addr = SocketAddr::from((config.bind_address, config.udp_listen_port));
-    let udp_socket = UdpSocket::bind(udp_addr)
-        .await
-        .with_context(|| format!("failed to bind udp listener on {udp_addr}"))?;
     info!(
         module = module_path!(),
         ws_listen_port = config.ws_listen_port,
         "http/ws server listening"
     );
-    info!(
-        module = module_path!(),
-        udp_listen_port = config.udp_listen_port,
-        "udp telemetry listener bound"
-    );
 
-    let telemetry_task = tokio::spawn(telemetry::udp_listener_loop(
-        udp_socket,
-        state.latest_telemetry_tx.clone(),
-        state.shutdown_tx.subscribe(),
-    ));
+    let telemetry_task = if let Some(replay_file) = config.replay_file.clone() {
+        let packets = replay::load_replay_packets(&replay_file)
+            .with_context(|| format!("failed to load replay capture {:?}", replay_file))?;
+        info!(
+            module = module_path!(),
+            replay_file = %replay_file.display(),
+            packet_count = packets.len(),
+            looping = config.replay_loop,
+            speed = config.replay_speed,
+            "telemetry replay enabled (udp listener disabled)"
+        );
+        tokio::spawn(replay::replay_loop(
+            Arc::new(packets),
+            state.latest_telemetry_tx.clone(),
+            state.shutdown_tx.subscribe(),
+            config.replay_loop,
+            config.replay_speed,
+        ))
+    } else {
+        let udp_addr = SocketAddr::from((config.bind_address, config.udp_listen_port));
+        let udp_socket = UdpSocket::bind(udp_addr)
+            .await
+            .with_context(|| format!("failed to bind udp listener on {udp_addr}"))?;
+        info!(
+            module = module_path!(),
+            udp_listen_port = config.udp_listen_port,
+            "udp telemetry listener bound"
+        );
+        tokio::spawn(telemetry::udp_listener_loop(
+            udp_socket,
+            state.latest_telemetry_tx.clone(),
+            state.shutdown_tx.subscribe(),
+        ))
+    };
     let lap_validity_task = tokio::spawn(lap_validity_loop(
         state.clone(),
         lap_validity::LapValidityConfig {
@@ -502,9 +563,7 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         .with_graceful_shutdown(shutdown_signal(state))
         .await
         .context("http/ws server exited with error")?;
-    telemetry_task
-        .await
-        .context("udp telemetry task panicked")??;
+    telemetry_task.await.context("telemetry task panicked")??;
     lap_validity_task
         .await
         .context("lap validity task panicked")??;
