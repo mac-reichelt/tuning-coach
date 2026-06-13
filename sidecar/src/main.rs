@@ -40,6 +40,7 @@ use tower_http::{
 use tracing::{error, info, info_span};
 use tracing_subscriber::EnvFilter;
 
+mod heuristics;
 mod hotkeys;
 mod lap_validity;
 mod overlay;
@@ -258,6 +259,54 @@ impl AppState {
         if *self.suppress_heuristics_tx.borrow() {
             return;
         }
+        let _ = self.recommendation_tx.send(payload);
+    }
+
+    /// Whether heuristic output is currently suppressed (dirty-lap analysis).
+    fn recommendations_suppressed(&self) -> bool {
+        *self.suppress_heuristics_tx.borrow()
+    }
+
+    /// Persist (best-effort) and broadcast a heuristics recommendation.
+    ///
+    /// Honours the dirty-lap suppression flag for both persistence and WS
+    /// fan-out, so nothing is stored or shown for an invalid lap.
+    fn deliver_recommendation(&self, rec: &recommendation::RecommendationPayload) {
+        if self.recommendations_suppressed() {
+            return;
+        }
+        let Ok(payload) = serde_json::to_value(rec) else {
+            return;
+        };
+
+        // Persist only when tied to a real session row (FK to sessions.id).
+        if let Ok(session_id) = rec.session_id.parse::<i64>() {
+            if session_id > 0 {
+                let category = payload
+                    .get("category")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let confidence = payload
+                    .get("confidence")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if let Err(err) = self.storage.insert_recommendation(
+                    session_id,
+                    None,
+                    category,
+                    Some(rec.adjustment.parameter.as_str()),
+                    confidence,
+                    &payload,
+                ) {
+                    tracing::warn!(
+                        module = module_path!(),
+                        %err,
+                        "failed to persist recommendation"
+                    );
+                }
+            }
+        }
+
         let _ = self.recommendation_tx.send(payload);
     }
 
@@ -563,6 +612,7 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         env!("CARGO_PKG_VERSION"),
     ));
     let telemetry_bridge_task = tokio::spawn(telemetry_bridge_loop(state.clone()));
+    let heuristics_task = tokio::spawn(heuristics_loop(state.clone()));
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal(state))
@@ -578,6 +628,9 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
     telemetry_bridge_task
         .await
         .context("telemetry bridge task panicked")??;
+    heuristics_task
+        .await
+        .context("heuristics task panicked")??;
 
     Ok(())
 }
@@ -1343,6 +1396,85 @@ async fn telemetry_bridge_loop(state: AppState) -> anyhow::Result<()> {
                     let dyno_status = dyno.dyno_status_fields();
                     let payload = dash_to_overlay_json(&dash, &current_lap_status, &dyno_status);
                     state.emit_telemetry(payload);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Current Unix time in milliseconds (server wall clock).
+fn now_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO)
+        .as_millis() as u64
+}
+
+/// Drives the heuristics engine off the live telemetry feed.
+///
+/// Subscribes to raw packets (per-packet critical detection + per-lap
+/// aggregation), session-state transitions (pause/finish flush + session
+/// reset), and lap-validity events (dirty-lap gating). Critical recommendations
+/// are emitted live; deferred ones only at lap completion or pause/finish.
+async fn heuristics_loop(state: AppState) -> anyhow::Result<()> {
+    let mut packet_rx = state.latest_telemetry_tx.subscribe();
+    let mut session_state_rx = state.session_state_tx.subscribe();
+    let mut lap_validity_rx = state.lap_validity_tx.subscribe();
+    let mut shutdown_rx = state.shutdown_tx.subscribe();
+
+    let mut engine = heuristics::HeuristicsEngine::new();
+    let mut last_dash: Option<telemetry::DashPacket> = None;
+
+    loop {
+        tokio::select! {
+            _ = shutdown_rx.recv() => break,
+            changed = packet_rx.changed() => {
+                if changed.is_err() {
+                    break;
+                }
+                let packet = packet_rx.borrow_and_update().clone();
+                if let Some(telemetry::TelemetryPacket::Dash(dash)) = packet {
+                    let recs = engine.on_packet(&dash, now_unix_ms());
+                    last_dash = Some(dash);
+                    for rec in &recs {
+                        state.deliver_recommendation(rec);
+                    }
+                }
+            }
+            lap_event = lap_validity_rx.recv() => {
+                match lap_event {
+                    Ok(event) => match event {
+                        lap_validity::LapValidityEvent::LapDirtyDetected { .. }
+                        | lap_validity::LapValidityEvent::LapRewindDetected { .. }
+                        | lap_validity::LapValidityEvent::SessionResetDetected { .. } => {
+                            engine.mark_lap_dirty();
+                        }
+                        lap_validity::LapValidityEvent::LapCleanMarked { .. } => {
+                            engine.mark_lap_clean();
+                        }
+                        _ => {}
+                    },
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            session_ev = session_state_rx.recv() => {
+                match session_ev {
+                    Ok(change) => {
+                        let recs = engine.on_session_state(
+                            change.to,
+                            change.session_id,
+                            last_dash.as_ref(),
+                            now_unix_ms(),
+                        );
+                        for rec in &recs {
+                            state.deliver_recommendation(rec);
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
         }

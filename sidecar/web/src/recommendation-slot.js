@@ -4,10 +4,10 @@
  * Renders a static placeholder card when no recommendation is present
  * (so layout is stable) and a live card when a recommendation arrives.
  *
- * Dismiss / snooze / history-toggle buttons are present but no-op until
- * Phase 7 wires real heuristics data.
+ * The Snooze / History / Dismiss controls hide, browse, or temporarily mute the
+ * panel; the coach can always be reopened from the overlay Coach button.
  *
- * WS payload contract (additive — no schema_version bump per ADR-0002):
+ * WS payload contract (additive — no schema_version bump per ADR-0002/0005):
  *
  * {
  *   "type": "recommendation",
@@ -31,7 +31,8 @@
  *     "caveats":    ["Assumes smooth driving style"],
  *     "alternatives": [],
  *     "driving_style_assumed": "smooth",
- *     "locked_fallback_used": false
+ *     "locked_fallback_used": false,
+ *     "urgency":    "critical"   // "critical" (live) | "deferred" (lap review)
  *   }
  * }
  *
@@ -171,11 +172,18 @@ export class RecommendationSlot {
     const adj = data.adjustment ?? {};
     const esc = RecommendationSlot.#esc;
 
+    // Urgency drives the badge + styling. Critical = surfaced live during the
+    // lap; deferred = lap-review feedback delivered at a lap end / pause.
+    const urgency = data.urgency === 'critical' ? 'critical' : 'deferred';
+    const badgeLabel = urgency === 'critical' ? 'Live' : 'Lap review';
+
     this.#body.innerHTML = `
-      <div class="rec-card">
+      <div class="rec-card" data-urgency="${esc(urgency)}">
+        <div class="rec-card-badge" data-urgency="${esc(urgency)}">${esc(badgeLabel)}</div>
         <div class="rec-card-title">${esc(data.title)}</div>
         <div class="rec-card-detected">${esc(data.detected)}</div>
         ${adj.summary ? `<div class="rec-card-adjustment">${esc(adj.summary)}</div>` : ''}
+        ${data.expected_outcome ? `<div class="rec-card-outcome">${esc(data.expected_outcome)}</div>` : ''}
         ${data.confidence ? `
           <div class="rec-card-confidence" data-confidence="${esc(data.confidence)}">
             Confidence: <span>${esc(data.confidence)}</span>

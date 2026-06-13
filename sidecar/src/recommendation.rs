@@ -35,6 +35,24 @@ pub enum RecommendationConfidence {
     Low,
 }
 
+/// How soon the overlay should surface the recommendation.
+///
+/// Serialises as snake_case (`Critical` → `"critical"`, `Deferred` →
+/// `"deferred"`). Additive over ADR-0003; see ADR-0005. Drives the
+/// live-vs-lap-review behaviour described in
+/// `docs/research/fm2023-tunable-values-and-telemetry-optimization.md`:
+/// only immediately-apparent, safety-relevant issues are `Critical` (emitted
+/// live during the lap); everything else is `Deferred` until a lap completes or
+/// the session pauses/finishes.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RecommendationUrgency {
+    /// Surfaced live during the lap.
+    Critical,
+    /// Held until a lap completes or the session pauses/finishes.
+    Deferred,
+}
+
 /// A single tuning adjustment (primary or alternative).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AdjustmentPayload {
@@ -94,6 +112,8 @@ pub struct RecommendationPayload {
     pub needs_setup_form: bool,
     /// Highest per-tyre wear fraction `[0.0, 1.0]` at emit time.
     pub tire_wear_max_at_emit: f32,
+    /// How soon the overlay should surface this recommendation (ADR-0005).
+    pub urgency: RecommendationUrgency,
 }
 
 /// Returns a fully-populated canonical stub used by `POST /admin/test/recommendation`.
@@ -138,6 +158,7 @@ pub fn stub_recommendation() -> RecommendationPayload {
         corners: vec!["T1".to_string(), "T3".to_string(), "T7".to_string()],
         needs_setup_form: false,
         tire_wear_max_at_emit: 0.15,
+        urgency: RecommendationUrgency::Deferred,
     }
 }
 
@@ -305,6 +326,9 @@ mod tests {
             value["tire_wear_max_at_emit"].is_number(),
             "tire_wear_max_at_emit must be number"
         );
+
+        // ADR-0005 additive field
+        assert_eq!(value["urgency"], json!("deferred"));
 
         // locked_fallback_used present (ADR-0002 field, carried forward)
         assert!(value["locked_fallback_used"].is_boolean());
