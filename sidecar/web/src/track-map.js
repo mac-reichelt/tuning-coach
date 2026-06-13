@@ -57,18 +57,35 @@ export function createModel() {
     lapStartDist: null,
     lastDist: null,
     lapNumber: null,
-    /** @type {Map<number, {n:number,sumX:number,sumZ:number}>} */
+    /**
+     * Pending (current-lap) envelope. Binned online here, then either committed
+     * to the persistent envelope when a full lap completes or discarded if the
+     * lap was a connect-in / out-lap (anchored === false). Kept as `stations` /
+     * `points` so the live in-progress lap renders immediately.
+     * @type {Map<number, {n:number,sumX:number,sumZ:number}>}
+     */
     stations: new Map(),
-    /** @type {Array<{x:number,z:number,station:number}>} decimated envelope buffer */
+    /** @type {Array<{x:number,z:number,station:number}>} decimated pending buffer */
     points: [],
     lastStoredX: null,
     lastStoredZ: null,
+    /**
+     * Persistent envelope, accumulated from completed full laps across every run
+     * in the session. Survives run restarts so the inferred track sharpens over
+     * the whole recording instead of only the current run.
+     * @type {Map<number, {n:number,sumX:number,sumZ:number}>}
+     */
+    committedStations: new Map(),
+    /** @type {Array<{x:number,z:number,station:number}>} */
+    committedPoints: [],
     /** @type {Array<{x:number,z:number,dist:number,pit:boolean}>} ordered drawn path */
     trail: [],
     lastTrailX: null,
     lastTrailZ: null,
     /** @type {?{x:number,z:number,hx:number,hz:number}} start/finish crossing */
     startFinish: null,
+    /** @type {?{x:number,z:number}} resume point awaiting a heading for S/F. */
+    pendingSF: null,
     /** @type {Array<{x:number,z:number}>} */
     pitMarks: [],
     lastPitX: null,
@@ -107,25 +124,86 @@ function rewindTrail(model, dist) {
   model.lastTrailZ = last ? last.z : null;
 }
 
+/** Reset the pending (current-lap) envelope buffer. */
+function clearPending(model) {
+  model.stations.clear();
+  model.points = [];
+  model.lastStoredX = null;
+  model.lastStoredZ = null;
+}
+
 /**
- * Handle a genuine start/finish crossing (a lap-number increment). Capture the
- * crossing geometry and start a fresh visible trail, but keep the cross-lap
- * edge envelope (station means) so it sharpens over successive laps. The very
- * first crossing discards the partial connect-in lap and anchors station 0.
+ * Commit the pending lap's envelope into the persistent envelope (a completed
+ * full lap). Station sums merge so the per-station means tighten lap over lap.
+ */
+function commitPending(model) {
+  for (const [station, st] of model.stations) {
+    let c = model.committedStations.get(station);
+    if (!c) {
+      c = { n: 0, sumX: 0, sumZ: 0 };
+      model.committedStations.set(station, c);
+    }
+    c.n += st.n;
+    c.sumX += st.sumX;
+    c.sumZ += st.sumZ;
+  }
+  for (const p of model.points) {
+    model.committedPoints.push(p);
+    if (model.committedPoints.length > MAX_POINTS) model.committedPoints.shift();
+  }
+}
+
+/**
+ * Handle a genuine start/finish crossing (a lap-number increment). Commit the
+ * just-completed lap to the persistent envelope if it was a full lap (already
+ * anchored), or discard it if it was the connect-in / out-lap. Then capture the
+ * crossing geometry, anchor a fresh lap at station 0, and start a fresh visible
+ * trail. The persistent envelope is never wiped, so it sharpens across laps and
+ * runs.
  */
 function onLapBoundary(model, x, z, dist, lap) {
   const sf = computeStartFinish(model, x, z);
-  if (!model.anchored) {
-    resetModel(model);
-    model.anchored = true;
+  if (model.anchored) {
+    commitPending(model);
   }
+  clearPending(model);
+  model.anchored = true;
   model.startFinish = sf;
+  model.pendingSF = null;
   model.trail = [];
   model.lastTrailX = null;
   model.lastTrailZ = null;
   model.lapStartDist = dist;
   model.lapNumber = lap;
   model.lastDist = dist;
+}
+
+/**
+ * Distance (metres) the car must teleport for a race resume to count as a new
+ * session/run rather than an in-place pause/resume.
+ */
+const NEWRUN_TELEPORT_M = 30;
+
+/**
+ * Handle a session/run restart. Forza emits all-zero packets while out of the
+ * race and re-enters behind the start/finish line, so the cumulative distance
+ * jumps and the car teleports far from where the previous run ended. Discard the
+ * interrupted pending lap and start a fresh out-lap, but KEEP the persistent
+ * (committed) envelope so the inferred track accumulated from earlier runs is
+ * preserved. `anchored` goes false so this run's connect-in lap is discarded at
+ * its first S/F crossing, exactly as on session start.
+ */
+function startRun(model, x, z, dist, lap) {
+  clearPending(model);
+  model.anchored = false;
+  model.trail = [];
+  model.lastTrailX = null;
+  model.lastTrailZ = null;
+  model.lapStartDist = dist;
+  model.lapNumber = lap;
+  model.lastDist = dist;
+  model.pendingSF = { x, z };
+  model.offActive = false;
 }
 
 /**
@@ -150,6 +228,7 @@ export function accumulate(model, s) {
   const { x, z, dist, lap, track } = s;
   const offTrack = s.offTrack === true;
   const pit = s.pit === true;
+  const newRun = s.newRun === true;
   if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(dist)) {
     return model;
   }
@@ -160,36 +239,65 @@ export function accumulate(model, s) {
     model.trackOrdinal = track;
   }
 
-  const backward = model.lastDist != null && dist < model.lastDist - REWIND_EPS_M;
-  const lapIncreased =
-    lap != null && model.lapNumber != null && lap > model.lapNumber;
-
-  if (lapIncreased && !backward) {
-    // Genuine start/finish crossing. DistanceTraveled is cumulative across laps,
-    // so a real new lap moves forward; only rewinds/restarts jump backward.
-    onLapBoundary(model, x, z, dist, lap);
-    // Fall through to record the first sample of the new lap.
-  } else if (backward) {
-    // Rewind, replay-loop restart, or session restart. Retract the visible trail
-    // to the rewound distance while keeping the cross-lap envelope and its
-    // station origin (lapStartDist) stable — re-anchoring the origin mid-session
-    // is what made the inferred edges "spider-web". A large jump back to the lap
-    // start (loop / restart) additionally refreshes the start/finish crossing.
-    if (dist < model.lastDist - DIST_RESET_M) {
-      model.startFinish = computeStartFinish(model, x, z);
+  // Race resumed after leaving the session. If the car teleported (or distance
+  // jumped) it's a genuine new run/session — discard the interrupted pending lap
+  // and start a fresh out-lap while keeping the persistent envelope from earlier
+  // runs. An in-place resume (a pause) teleports nowhere, so it falls through to
+  // the normal pause/forward logic and the map is preserved.
+  if (newRun && model.lastTrailX != null) {
+    const teleported =
+      Math.hypot(x - model.lastTrailX, z - model.lastTrailZ) > NEWRUN_TELEPORT_M ||
+      (model.lastDist != null && Math.abs(dist - model.lastDist) > DIST_RESET_M);
+    if (teleported) {
+      startRun(model, x, z, dist, lap);
+      // Fall through to record this sample as the new run's first point.
     }
-    rewindTrail(model, dist);
-    model.lastDist = dist;
-    return model;
-  } else if (
-    model.lastDist != null &&
-    Math.abs(dist - model.lastDist) <= PAUSE_EPS_M &&
-    model.lastTrailX != null &&
-    Math.hypot(x - model.lastTrailX, z - model.lastTrailZ) <= PAUSE_EPS_M
-  ) {
-    // Paused: hold the trace.
-    model.offActive = offTrack ? model.offActive : false;
-    return model;
+  }
+
+  {
+    // Resolve a deferred start/finish heading from the first forward movement of
+    // a freshly started run.
+    if (model.pendingSF) {
+      const dx = x - model.pendingSF.x;
+      const dz = z - model.pendingSF.z;
+      const len = Math.hypot(dx, dz);
+      if (len > 0.5) {
+        model.startFinish = { x: model.pendingSF.x, z: model.pendingSF.z, hx: dx / len, hz: dz / len };
+        model.pendingSF = null;
+      }
+    }
+
+    const backward = model.lastDist != null && dist < model.lastDist - REWIND_EPS_M;
+    const lapIncreased =
+      lap != null && model.lapNumber != null && lap > model.lapNumber;
+
+    if (lapIncreased && !backward) {
+      // Genuine start/finish crossing. DistanceTraveled is cumulative across laps,
+      // so a real new lap moves forward; only rewinds/restarts jump backward.
+      onLapBoundary(model, x, z, dist, lap);
+      // Fall through to record the first sample of the new lap.
+    } else if (backward) {
+      // Rewind, replay-loop restart, or session restart. Retract the visible trail
+      // to the rewound distance while keeping the cross-lap envelope and its
+      // station origin (lapStartDist) stable — re-anchoring the origin mid-session
+      // is what made the inferred edges "spider-web". A large jump back to the lap
+      // start (loop / restart) additionally refreshes the start/finish crossing.
+      if (dist < model.lastDist - DIST_RESET_M) {
+        model.startFinish = computeStartFinish(model, x, z);
+      }
+      rewindTrail(model, dist);
+      model.lastDist = dist;
+      return model;
+    } else if (
+      model.lastDist != null &&
+      Math.abs(dist - model.lastDist) <= PAUSE_EPS_M &&
+      model.lastTrailX != null &&
+      Math.hypot(x - model.lastTrailX, z - model.lastTrailZ) <= PAUSE_EPS_M
+    ) {
+      // Paused: hold the trace.
+      model.offActive = offTrack ? model.offActive : false;
+      return model;
+    }
   }
 
   if (model.lapStartDist == null) model.lapStartDist = dist;
@@ -293,10 +401,13 @@ export function resetModel(model) {
   model.points = [];
   model.lastStoredX = null;
   model.lastStoredZ = null;
+  model.committedStations.clear();
+  model.committedPoints = [];
   model.trail = [];
   model.lastTrailX = null;
   model.lastTrailZ = null;
   model.startFinish = null;
+  model.pendingSF = null;
   model.pitMarks = [];
   model.lastPitX = null;
   model.lastPitZ = null;
@@ -307,12 +418,31 @@ export function resetModel(model) {
 }
 
 /**
+ * Merge a station-sum entry into an accumulator map.
+ */
+function mergeStation(acc, station, st) {
+  let a = acc.get(station);
+  if (!a) {
+    a = { n: 0, sumX: 0, sumZ: 0 };
+    acc.set(station, a);
+  }
+  a.n += st.n;
+  a.sumX += st.sumX;
+  a.sumZ += st.sumZ;
+}
+
+/**
  * Build the ordered centreline (station means) as an array sorted by station.
+ * Combines the persistent (committed) envelope with the pending current lap so
+ * the live lap renders before its first crossing commits it.
  * @returns {Array<{station:number,x:number,z:number}>}
  */
 export function centerline(model) {
+  const acc = new Map();
+  for (const [station, st] of model.committedStations) mergeStation(acc, station, st);
+  for (const [station, st] of model.stations) mergeStation(acc, station, st);
   const out = [];
-  for (const [station, st] of model.stations) {
+  for (const [station, st] of acc) {
     if (st.n > 0) out.push({ station, x: st.sumX / st.n, z: st.sumZ / st.n });
   }
   out.sort((a, b) => a.station - b.station);
@@ -349,9 +479,10 @@ export function edges(model) {
     return { nx: -tz, nz: tx };
   });
 
-  // Per-station lateral min/max from buffered points.
+  // Per-station lateral min/max from buffered points (committed + pending).
   const lat = center.map(() => ({ min: 0, max: 0, has: false }));
-  for (const p of model.points) {
+  const allPoints = model.committedPoints.concat(model.points);
+  for (const p of allPoints) {
     const idx = byStation.get(p.station);
     if (idx == null) continue;
     const c = center[idx];
@@ -436,6 +567,7 @@ export class TrackMap {
   #renderScheduled = false;
   #pitActive = false;
   #offVisible = true;
+  #prevRaceOn = false;
 
   constructor(rootEl) {
     this.#root = rootEl;
@@ -457,6 +589,7 @@ export class TrackMap {
     this.#car.drivingLine = Number.isFinite(raw.driving_line) ? raw.driving_line : 0;
 
     if (this.#car.raceOn) {
+      const newRun = !this.#prevRaceOn;
       accumulate(this.#model, {
         x: raw.pos_x,
         z: raw.pos_z,
@@ -465,8 +598,10 @@ export class TrackMap {
         track: raw.track_ordinal,
         offTrack: offTrackFromRaw(raw),
         pit: this.#pitActive,
+        newRun,
       });
     }
+    this.#prevRaceOn = this.#car.raceOn;
 
     if (this.#visible) this.#scheduleRender();
   }
@@ -488,6 +623,7 @@ export class TrackMap {
     resetModel(this.#model);
     this.#model.trackOrdinal = null;
     this.#pitActive = false;
+    this.#prevRaceOn = false;
     if (this.#visible) this.#scheduleRender();
   }
 

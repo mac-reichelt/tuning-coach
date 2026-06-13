@@ -56,12 +56,15 @@ describe('track-map model', () => {
     const m = createModel();
     // Lap 1 is the connect-in-progress lap: discarded at the first boundary.
     feedStraight(m, { lap: 1, baseDist: 0 });
+    // Laps 2 and 3 are full laps that commit to the persistent envelope; lap 4
+    // drives a boundary so lap 3 also commits.
     feedStraight(m, { lap: 2, baseDist: 70 });
     feedStraight(m, { lap: 3, baseDist: 140 });
+    feedStraight(m, { lap: 4, baseDist: 210 });
     // Laps 2 and 3 retrace the same geometry → stations align, not double.
     expect(centerline(m).length).toBeLessThanOrEqual(8);
-    // Each aligned station was visited on both lap 2 and lap 3.
-    const visited = [...m.stations.values()].every(st => st.n >= 2);
+    // Each aligned station was visited on both committed laps (2 and 3).
+    const visited = [...m.committedStations.values()].every(st => st.n >= 2);
     expect(visited).toBe(true);
   });
 
@@ -263,6 +266,68 @@ describe('trail, rewind, pause, pit', () => {
     accumulate(m, { x: 0, z: 0, dist: 0, lap: 1, track: 1 });
     expect(m.startFinish).not.toBeNull();
     expect(Number.isFinite(m.startFinish.hx)).toBe(true);
+  });
+
+  it('starts a fresh run on a race-resume teleport, discarding prior geometry', () => {
+    const m = createModel();
+    // Run 1: drive a straight stretch far from the origin.
+    for (let d = 0; d <= 90; d += 3) {
+      accumulate(m, { x: 500 + d, z: 200, dist: 1000 + d, lap: 1, track: 1 });
+    }
+    expect(m.trail.length).toBeGreaterThan(2);
+    // Race resumes after a session break: teleport to a distant start, big dist
+    // jump, newRun flagged. Prior run's geometry must be wiped (no smear).
+    accumulate(m, { x: -300, z: -250, dist: 5000, lap: 1, track: 1, newRun: true });
+    expect(m.trail.length).toBe(1); // only the new run's first point
+    expect(m.lapStartDist).toBe(5000); // origin re-anchored to this run
+    // The new run's bright path stays near its own start, not bridged to run 1.
+    accumulate(m, { x: -297, z: -250, dist: 5003, lap: 1, track: 1 });
+    for (const p of m.trail) {
+      expect(p.x).toBeLessThan(0);
+    }
+  });
+
+  it('preserves the committed envelope across a race-resume teleport', () => {
+    const m = createModel();
+    // Run 1: drive two full laps so lap 2 commits to the persistent envelope.
+    feedStraight(m, { lap: 1, baseDist: 0 });
+    feedStraight(m, { lap: 2, baseDist: 70 });
+    feedStraight(m, { lap: 3, baseDist: 140 });
+    const committed = m.committedStations.size;
+    expect(committed).toBeGreaterThan(0);
+    // Race resumes after a session break: teleport to a distant start.
+    accumulate(m, { x: -300, z: -250, dist: 9000, lap: 1, track: 7, newRun: true });
+    // Pending lap is discarded, but the persistent envelope from run 1 survives.
+    expect(m.committedStations.size).toBe(committed);
+    expect(centerline(m).length).toBeGreaterThan(0);
+  });
+
+  it('treats an in-place race resume (pause) as continuous, preserving the map', () => {
+    const m = createModel();
+    for (let d = 0; d <= 90; d += 3) {
+      accumulate(m, { x: d, z: 0, dist: d, lap: 1, track: 1 });
+    }
+    const peak = m.trail.length;
+    const stations = centerline(m).length;
+    // Resume at essentially the same spot/distance: not a teleport → no wipe.
+    accumulate(m, { x: 90.02, z: 0, dist: 90.02, lap: 1, track: 1, newRun: true });
+    expect(m.trail.length).toBeGreaterThanOrEqual(peak);
+    expect(centerline(m).length).toBe(stations);
+  });
+
+  it('defers the start/finish heading to the first forward step after a new run', () => {
+    const m = createModel();
+    for (let d = 0; d <= 60; d += 3) {
+      accumulate(m, { x: d, z: 0, dist: d, lap: 1, track: 1 });
+    }
+    // New run starting behind the line; heading unknown on the first frame.
+    accumulate(m, { x: 0, z: 0, dist: 900, lap: 1, track: 1, newRun: true });
+    expect(m.pendingSF).not.toBeNull();
+    // First forward movement resolves the S/F heading.
+    accumulate(m, { x: 0, z: 5, dist: 905, lap: 1, track: 1 });
+    expect(m.pendingSF).toBeNull();
+    expect(m.startFinish).not.toBeNull();
+    expect(Math.abs(Math.hypot(m.startFinish.hx, m.startFinish.hz) - 1)).toBeLessThan(1e-6);
   });
 
   it('holds the trail while paused (no movement)', () => {
