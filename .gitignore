@@ -28,3 +28,9 @@ simhub/_Backups/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# Node.js dependencies (web frontend devDeps / vitest)
+node_modules/
+
+# Playwright MCP inspection artifacts
+.playwright-mcp/
