@@ -23,6 +23,7 @@ vi.mock('./src/drag.js', () => ({ makeDraggable: vi.fn() }));
 const ctxStub = {
   clearRect: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
   closePath: vi.fn(), stroke: vi.fn(), fill: vi.fn(), arc: vi.fn(),
+  fillRect: vi.fn(), strokeRect: vi.fn(),
   save: vi.fn(), restore: vi.fn(), setLineDash: vi.fn(),
   strokeStyle: '', fillStyle: '', lineWidth: 1,
 };
@@ -30,7 +31,8 @@ HTMLCanvasElement.prototype.getContext = () => ctxStub;
 
 import {
   createModel, accumulate, resetModel, centerline, edges,
-  fitTransform, gaugeFraction, contiguousRuns, STATION_M, TrackMap,
+  fitTransform, gaugeFraction, contiguousRuns, offTrackFromRaw, markPitStart,
+  OFFTRACK_DRIVING_LINE_CAP, STATION_M, TrackMap,
 } from './src/track-map.js';
 
 /** Feed a straight +X track with a lateral spread in Z into a model. */
@@ -195,6 +197,113 @@ describe('gaugeFraction', () => {
   });
 });
 
+describe('trail, rewind, pause, pit', () => {
+  /** Drive forward, appending one trail point roughly every metre. */
+  function drive(model, { from = 0, to = 30, lap = 1, track = 1, pit = false } = {}) {
+    for (let d = from; d <= to; d += 3) {
+      accumulate(model, { x: d, z: 0, dist: d, lap, track, pit });
+    }
+  }
+
+  it('builds an ordered trail as the car moves forward', () => {
+    const m = createModel();
+    drive(m, { to: 30 });
+    expect(m.trail.length).toBeGreaterThan(2);
+    // Trail is ordered by distance.
+    for (let i = 1; i < m.trail.length; i++) {
+      expect(m.trail[i].dist).toBeGreaterThanOrEqual(m.trail[i - 1].dist);
+    }
+  });
+
+  it('retracts the trail on a rewind (backwards distance)', () => {
+    const m = createModel();
+    drive(m, { to: 30 });
+    const peak = m.trail.length;
+    // Rewind from 30 back to 12.
+    for (let d = 30; d >= 12; d -= 3) {
+      accumulate(m, { x: d, z: 0, dist: d, lap: 1, track: 1 });
+    }
+    expect(m.trail.length).toBeLessThan(peak);
+    expect(m.trail[m.trail.length - 1].dist).toBeLessThanOrEqual(15);
+  });
+
+  it('holds the trail while paused (no movement)', () => {
+    const m = createModel();
+    drive(m, { to: 30 });
+    const len = m.trail.length;
+    // Same position/distance repeated → paused, no new points.
+    for (let i = 0; i < 5; i++) {
+      accumulate(m, { x: 30, z: 0, dist: 30, lap: 1, track: 1 });
+    }
+    expect(m.trail.length).toBe(len);
+  });
+
+  it('tags trail points driven during a pit stop', () => {
+    const m = createModel();
+    drive(m, { to: 15, pit: false });
+    drive(m, { from: 18, to: 30, pit: true });
+    expect(m.trail.some(p => p.pit === true)).toBe(true);
+    expect(m.trail.some(p => p.pit === false)).toBe(true);
+  });
+
+  it('captures a start/finish crossing on the first lap boundary', () => {
+    const m = createModel();
+    drive(m, { from: 0, to: 30, lap: 1 });
+    // Lap increments → start/finish crossing recorded, fresh trail.
+    accumulate(m, { x: 33, z: 0, dist: 33, lap: 2, track: 1 });
+    expect(m.startFinish).not.toBeNull();
+    expect(Number.isFinite(m.startFinish.x)).toBe(true);
+    expect(Number.isFinite(m.startFinish.hx)).toBe(true);
+  });
+
+  it('records off-track markers on the rising edge, spaced apart', () => {
+    const m = createModel();
+    accumulate(m, { x: 0, z: 0, dist: 0, lap: 1, track: 1, offTrack: false });
+    accumulate(m, { x: 2, z: 0, dist: 2, lap: 1, track: 1, offTrack: true });
+    // Still off-track but no rising edge → no new marker.
+    accumulate(m, { x: 4, z: 0, dist: 4, lap: 1, track: 1, offTrack: true });
+    expect(m.offMarks.length).toBe(1);
+    // Back on track, then off again far away → second marker.
+    accumulate(m, { x: 20, z: 0, dist: 20, lap: 1, track: 1, offTrack: false });
+    accumulate(m, { x: 40, z: 0, dist: 40, lap: 1, track: 1, offTrack: true });
+    expect(m.offMarks.length).toBe(2);
+  });
+
+  it('markPitStart records spaced pit markers', () => {
+    const m = createModel();
+    markPitStart(m, 10, 10);
+    markPitStart(m, 11, 10); // too close → ignored
+    markPitStart(m, 40, 40);
+    expect(m.pitMarks.length).toBe(2);
+  });
+
+  it('resetModel clears trail, markers and start/finish', () => {
+    const m = createModel();
+    drive(m, { to: 30 });
+    markPitStart(m, 5, 5);
+    accumulate(m, { x: 33, z: 0, dist: 33, lap: 2, track: 1, offTrack: true });
+    resetModel(m);
+    expect(m.trail).toEqual([]);
+    expect(m.pitMarks).toEqual([]);
+    expect(m.offMarks).toEqual([]);
+    expect(m.startFinish).toBeNull();
+  });
+});
+
+describe('offTrackFromRaw', () => {
+  it('is true only when driving_line saturates at the ±127 cap', () => {
+    expect(offTrackFromRaw({ driving_line: 0 })).toBe(false);
+    expect(offTrackFromRaw({ driving_line: 100 })).toBe(false);
+    expect(offTrackFromRaw({ driving_line: OFFTRACK_DRIVING_LINE_CAP })).toBe(true);
+    expect(offTrackFromRaw({ driving_line: -OFFTRACK_DRIVING_LINE_CAP })).toBe(true);
+  });
+
+  it('handles missing/invalid input', () => {
+    expect(offTrackFromRaw(null)).toBe(false);
+    expect(offTrackFromRaw({})).toBe(false);
+  });
+});
+
 describe('TrackMap widget', () => {
   let root;
   let tm;
@@ -261,5 +370,26 @@ describe('TrackMap widget', () => {
   it('ignores telemetry with no raw block', () => {
     tm.show();
     expect(() => tm.onTelemetry({ is_race_on: true })).not.toThrow();
+  });
+
+  it('drops a pit marker and colours the trail on pit start', () => {
+    tm.show();
+    for (let x = 0; x <= 30; x++) {
+      tm.onTelemetry({ is_race_on: true, raw: { driving_line: 0, pos_x: x, pos_z: 0, dist_m: x, lap_number: 1, track_ordinal: 1 } });
+    }
+    tm.onPitStart();
+    // A subsequent sample is flagged as a pit segment.
+    tm.onTelemetry({ is_race_on: true, raw: { driving_line: 0, pos_x: 33, pos_z: 0, dist_m: 33, lap_number: 1, track_ordinal: 1 } });
+    tm.onPitEnd();
+    expect(() => tm.onTelemetry({ is_race_on: true, raw: { driving_line: 0, pos_x: 36, pos_z: 0, dist_m: 36, lap_number: 1, track_ordinal: 1 } })).not.toThrow();
+  });
+
+  it('toggles the off-track marker button label', () => {
+    const btn = root.querySelector('[data-track="off-toggle"]');
+    expect(btn.textContent).toContain('✓');
+    btn.click();
+    expect(btn.textContent).toContain('✗');
+    btn.click();
+    expect(btn.textContent).toContain('✓');
   });
 });

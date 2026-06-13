@@ -67,7 +67,7 @@
     import { TelemetryStatus }    from './src/telemetry-status.js?v=20260613-1';
     import { RawTelemetryPanel }  from './src/raw-telemetry.js?v=20260525-8';
     import { DynoGraph }          from './src/dyno-graph.js?v=20260525-8';
-    import { TrackMap }           from './src/track-map.js?v=20260613-1';
+    import { TrackMap }           from './src/track-map.js?v=20260613-2';
 
     // ── Init components ──────────────────────────────────────
 
@@ -151,6 +151,14 @@
     // lap_clean_marked — reset to valid for the new lap
     client.addEventListener('lap_clean_marked', () => {
       badge.set('valid');
+    });
+
+    // Pit-stop span — colour the track-map trail and drop a start marker.
+    client.addEventListener('pit_stop_started', () => {
+      trackMap.onPitStart();
+    });
+    client.addEventListener('pit_stop_ended', () => {
+      trackMap.onPitEnd();
     });
 
     // WsClient manages 'reconnecting' → 'down' state internally after repeated

@@ -14,6 +14,10 @@ export function makeDraggable(el, handle) {
   handle.style.cursor = 'grab';
 
   handle.addEventListener('pointerdown', (e) => {
+    // Don't start a drag when the user is clicking an interactive control
+    // (button/input/etc.) inside the handle — let the click through.
+    if (e.target.closest('button, input, select, textarea, a')) return;
+
     // Convert right/bottom anchoring to left/top so we can offset freely.
     const rect    = el.getBoundingClientRect();
     el.style.left   = `${rect.left}px`;

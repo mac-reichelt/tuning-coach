@@ -851,6 +851,11 @@ html, body {
   color: var(--color-text);
 }
 
+.track-btn-active {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+
 .track-body { padding: 8px 12px 12px; position: relative; }
 
 .track-canvas {

@@ -22,12 +22,27 @@ import { makeDraggable } from './drag.js';
 export const STATION_M = 10;
 /** Minimum spacing between stored envelope points (metres). */
 const DECIMATE_M = 2.0;
+/** Minimum spacing between stored visible-trail points (metres). */
+const TRAIL_DECIMATE_M = 2.0;
 /** Cap on the envelope point ring buffer. */
 const MAX_POINTS = 12000;
+/** Cap on the visible trail ring buffer. */
+const MAX_TRAIL = 8000;
 /** A drop in dist_m larger than this (metres) signals a new lap/session/track. */
 const DIST_RESET_M = 50;
+/** A smaller backward dist_m step than DIST_RESET_M is treated as a rewind. */
+const REWIND_EPS_M = 1.0;
+/** Movement/dist below this (metres) between frames is treated as paused. */
+const PAUSE_EPS_M = 0.05;
 /** Don't connect centreline/edge nodes across a station-index gap wider than this. */
 const MAX_GAP_STATIONS = 3;
+/** Minimum spacing between distinct off-track / pit markers (metres). */
+const MARK_MIN_SPACING_M = 8;
+/** Half-length of the drawn start/finish line (metres). */
+const SF_HALF_WIDTH_M = 9;
+
+/** Off-track when NormalizedDrivingLine saturates at its i8 cap (±127). */
+export const OFFTRACK_DRIVING_LINE_CAP = 127;
 
 const PAD = 14;
 
@@ -44,11 +59,52 @@ export function createModel() {
     lapNumber: null,
     /** @type {Map<number, {n:number,sumX:number,sumZ:number}>} */
     stations: new Map(),
-    /** @type {Array<{x:number,z:number,station:number}>} decimated ring buffer */
+    /** @type {Array<{x:number,z:number,station:number}>} decimated envelope buffer */
     points: [],
     lastStoredX: null,
     lastStoredZ: null,
+    /** @type {Array<{x:number,z:number,dist:number,pit:boolean}>} ordered drawn path */
+    trail: [],
+    lastTrailX: null,
+    lastTrailZ: null,
+    /** @type {?{x:number,z:number,hx:number,hz:number}} start/finish crossing */
+    startFinish: null,
+    /** @type {Array<{x:number,z:number}>} */
+    pitMarks: [],
+    lastPitX: null,
+    lastPitZ: null,
+    /** @type {Array<{x:number,z:number}>} */
+    offMarks: [],
+    lastOffX: null,
+    lastOffZ: null,
+    offActive: false,
   };
+}
+
+/**
+ * Compute the start/finish crossing geometry (position + unit heading) from the
+ * trail's final segment, before the trail is reset for the new lap.
+ * @returns {{x:number,z:number,hx:number,hz:number}}
+ */
+function computeStartFinish(model, x, z) {
+  let hx = 1, hz = 0;
+  const t = model.trail;
+  if (t.length >= 1) {
+    const p = t[t.length - 1];
+    const dx = x - p.x, dz = z - p.z;
+    const len = Math.hypot(dx, dz);
+    if (len > 0.01) { hx = dx / len; hz = dz / len; }
+  }
+  return { x, z, hx, hz };
+}
+
+/** Drop trail points that are ahead of the current (rewound) distance. */
+function rewindTrail(model, dist) {
+  const t = model.trail;
+  while (t.length && t[t.length - 1].dist > dist + 0.01) t.pop();
+  const last = t[t.length - 1];
+  model.lastTrailX = last ? last.x : null;
+  model.lastTrailZ = last ? last.z : null;
 }
 
 /**
@@ -57,16 +113,22 @@ export function createModel() {
  * Station 0 is anchored to the track's start/finish line so the same physical
  * spot maps to the same station on every lap (letting the edge envelope build
  * across laps). The start/finish line is detected as a lap boundary: either a
- * lap-number increment or a backwards jump in distance (replay loop / lap
- * rollover). The very first boundary also discards the initial partial lap,
- * whose stations were numbered from an arbitrary mid-lap connection point.
+ * lap-number increment or a large backwards jump in distance (replay loop / lap
+ * rollover). The very first boundary also discards the initial partial lap.
+ *
+ * In addition to the statistical envelope, an ordered `trail` records the
+ * actual driven path for the current lap. The trail retracts on a rewind (a
+ * small backwards dist step), holds on a pause (no movement), and tags points
+ * driven during a pit stop so the renderer can colour them differently.
  *
  * @param {object} model   model from createModel()
- * @param {object} s       { x, z, dist, lap, track }
+ * @param {object} s       { x, z, dist, lap, track, offTrack?, pit? }
  * @returns {object} the same model (mutated)
  */
 export function accumulate(model, s) {
   const { x, z, dist, lap, track } = s;
+  const offTrack = s.offTrack === true;
+  const pit = s.pit === true;
   if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(dist)) {
     return model;
   }
@@ -79,15 +141,39 @@ export function accumulate(model, s) {
 
   const backwardJump = model.lastDist != null && dist < model.lastDist - DIST_RESET_M;
   const lapChange = lap != null && model.lapNumber != null && lap !== model.lapNumber;
+  const boundary = backwardJump || lapChange;
 
-  if (backwardJump || lapChange) {
+  if (boundary) {
+    const sf = computeStartFinish(model, x, z);
     if (!model.anchored) {
       // First real start/finish crossing: throw away the partial-lap stations
       // (numbered from wherever we connected) and anchor cleanly from here.
       resetModel(model);
       model.anchored = true;
     }
+    model.startFinish = sf;
+    // Start a fresh visible trail for the new lap.
+    model.trail = [];
+    model.lastTrailX = null;
+    model.lastTrailZ = null;
     model.lapStartDist = dist;
+    model.lapNumber = lap ?? model.lapNumber;
+    model.lastDist = dist;
+    // Fall through to record this first point of the new lap.
+  } else if (model.lastDist != null && dist < model.lastDist - REWIND_EPS_M) {
+    // Rewind: retract the drawn trail; don't accumulate the backwards motion.
+    rewindTrail(model, dist);
+    model.lastDist = dist;
+    return model;
+  } else if (
+    model.lastDist != null &&
+    Math.abs(dist - model.lastDist) <= PAUSE_EPS_M &&
+    model.lastTrailX != null &&
+    Math.hypot(x - model.lastTrailX, z - model.lastTrailZ) <= PAUSE_EPS_M
+  ) {
+    // Paused: hold the trace.
+    model.offActive = offTrack ? model.offActive : false;
+    return model;
   }
 
   if (model.lapStartDist == null) model.lapStartDist = dist;
@@ -97,7 +183,7 @@ export function accumulate(model, s) {
   if (lapDist < 0) lapDist = 0;
   const station = Math.floor(lapDist / STATION_M);
 
-  // Online centreline mean per station.
+  // Online centreline mean per station (envelope).
   let st = model.stations.get(station);
   if (!st) {
     st = { n: 0, sumX: 0, sumZ: 0 };
@@ -107,7 +193,7 @@ export function accumulate(model, s) {
   st.sumX += x;
   st.sumZ += z;
 
-  // Decimated point buffer for edge spread.
+  // Decimated point buffer for edge spread (envelope).
   if (
     model.lastStoredX == null ||
     Math.hypot(x - model.lastStoredX, z - model.lastStoredZ) >= DECIMATE_M
@@ -118,8 +204,63 @@ export function accumulate(model, s) {
     if (model.points.length > MAX_POINTS) model.points.shift();
   }
 
+  // Visible ordered trail (the bright drawn path).
+  if (
+    model.lastTrailX == null ||
+    Math.hypot(x - model.lastTrailX, z - model.lastTrailZ) >= TRAIL_DECIMATE_M
+  ) {
+    model.trail.push({ x, z, dist, pit });
+    model.lastTrailX = x;
+    model.lastTrailZ = z;
+    if (model.trail.length > MAX_TRAIL) model.trail.shift();
+  }
+
+  // Off-track excursion marker (rising edge, spaced).
+  if (offTrack) {
+    if (!model.offActive) {
+      if (
+        model.lastOffX == null ||
+        Math.hypot(x - model.lastOffX, z - model.lastOffZ) >= MARK_MIN_SPACING_M
+      ) {
+        model.offMarks.push({ x, z });
+        model.lastOffX = x;
+        model.lastOffZ = z;
+      }
+      model.offActive = true;
+    }
+  } else {
+    model.offActive = false;
+  }
+
   model.lastDist = dist;
   return model;
+}
+
+/** Record a pit-stop start marker at the given position (spaced from the last). */
+export function markPitStart(model, x, z) {
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return;
+  if (
+    model.lastPitX == null ||
+    Math.hypot(x - model.lastPitX, z - model.lastPitZ) >= MARK_MIN_SPACING_M
+  ) {
+    model.pitMarks.push({ x, z });
+    model.lastPitX = x;
+    model.lastPitZ = z;
+  }
+}
+
+/**
+ * Decide whether the car is off track from raw telemetry. NormalizedDrivingLine
+ * is an i8 [-127..127] lateral offset from the AI line; it saturates at ±127
+ * when the car runs wide of the track, which we treat as an off-track marker.
+ *
+ * @param {object} raw   telemetry `data.raw`
+ * @returns {boolean}
+ */
+export function offTrackFromRaw(raw) {
+  if (!raw) return false;
+  const dl = Number(raw.driving_line);
+  return Number.isFinite(dl) && Math.abs(dl) >= OFFTRACK_DRIVING_LINE_CAP;
 }
 
 /** Clear accumulated geometry. */
@@ -132,6 +273,17 @@ export function resetModel(model) {
   model.points = [];
   model.lastStoredX = null;
   model.lastStoredZ = null;
+  model.trail = [];
+  model.lastTrailX = null;
+  model.lastTrailZ = null;
+  model.startFinish = null;
+  model.pitMarks = [];
+  model.lastPitX = null;
+  model.lastPitZ = null;
+  model.offMarks = [];
+  model.lastOffX = null;
+  model.lastOffZ = null;
+  model.offActive = false;
 }
 
 /**
@@ -262,6 +414,8 @@ export class TrackMap {
   #els = {};
   #car = { x: null, z: null, drivingLine: 0, raceOn: false };
   #renderScheduled = false;
+  #pitActive = false;
+  #offVisible = true;
 
   constructor(rootEl) {
     this.#root = rootEl;
@@ -289,16 +443,31 @@ export class TrackMap {
         dist: raw.dist_m,
         lap: raw.lap_number,
         track: raw.track_ordinal,
+        offTrack: offTrackFromRaw(raw),
+        pit: this.#pitActive,
       });
     }
 
     if (this.#visible) this.#scheduleRender();
   }
 
+  /** Mark the start of a pit stop (from the `pit_stop_started` WS event). */
+  onPitStart() {
+    this.#pitActive = true;
+    markPitStart(this.#model, this.#car.x, this.#car.z);
+    if (this.#visible) this.#scheduleRender();
+  }
+
+  /** Mark the end of a pit stop (from the `pit_stop_ended` WS event). */
+  onPitEnd() {
+    this.#pitActive = false;
+  }
+
   /** Throw away the accumulated map (e.g. user pressed Clear). */
   clear() {
     resetModel(this.#model);
     this.#model.trackOrdinal = null;
+    this.#pitActive = false;
     if (this.#visible) this.#scheduleRender();
   }
 
@@ -309,6 +478,7 @@ export class TrackMap {
       <div class="track-header">
         <span class="track-title" data-track="title">Track</span>
         <div class="track-header-btns">
+          <button class="track-btn track-btn-active" data-track="off-toggle" title="Show/hide off-track markers">Off ✓</button>
           <button class="track-btn" data-track="clear">Clear</button>
         </div>
       </div>
@@ -335,11 +505,23 @@ export class TrackMap {
       gaugeVal: q('gauge-val'),
       empty:   q('empty'),
       clear:   q('clear'),
+      offToggle: q('off-toggle'),
     };
 
     this.#els.clear.addEventListener('click', () => this.clear());
+    this.#els.offToggle.addEventListener('click', () => this.#toggleOffMarkers());
 
     makeDraggable(this.#root, this.#root.querySelector('.track-header'));
+  }
+
+  #toggleOffMarkers() {
+    this.#offVisible = !this.#offVisible;
+    const btn = this.#els.offToggle;
+    if (btn) {
+      btn.textContent = this.#offVisible ? 'Off ✓' : 'Off ✗';
+      btn.classList.toggle('track-btn-active', this.#offVisible);
+    }
+    if (this.#visible) this.#scheduleRender();
   }
 
   #scheduleRender() {
@@ -382,23 +564,23 @@ export class TrackMap {
     const H = canvas.height;
     ctx.clearRect(0, 0, W, H);
 
-    const { center, left, right } = edges(this.#model);
-    const haveMap = center.length >= 3;
+    const model = this.#model;
+    const { center, left, right } = edges(model);
+    const trail = model.trail;
+    const haveMap = trail.length >= 2 || center.length >= 3;
     if (this.#els.empty) this.#els.empty.hidden = haveMap;
-    if (!haveMap) {
-      // Still show the live car as a lone dot if we have a position.
-      return;
-    }
+    if (!haveMap) return;
 
-    const allPts = center.concat(left, right);
+    // Fit over everything we draw so nothing clips.
+    const allPts = center.concat(left, right, trail, model.pitMarks, model.offMarks);
+    if (model.startFinish) allPts.push(model.startFinish);
     const t = fitTransform(allPts, W, H);
     if (!t) return;
 
-    // Edge band: fill + outline per contiguous run of stations so we never
-    // bridge a gap (missing section) with a chord across the map.
+    // Faint inferred edge band (envelope across laps), gap-safe per run.
     if (left.length >= 2 && right.length >= 2) {
       const runs = contiguousRuns(left, right);
-      ctx.fillStyle = 'rgba(120,160,220,0.12)';
+      ctx.fillStyle = 'rgba(120,160,220,0.10)';
       for (const run of runs) {
         if (run.left.length < 2) continue;
         ctx.beginPath();
@@ -413,19 +595,43 @@ export class TrackMap {
         ctx.closePath();
         ctx.fill();
       }
-
-      ctx.strokeStyle = 'rgba(150,180,230,0.45)';
+      ctx.strokeStyle = 'rgba(150,180,230,0.30)';
       ctx.lineWidth = 1;
       this.#strokePolyline(ctx, t, left);
       this.#strokePolyline(ctx, t, right);
     }
 
-    // Centreline (dashed accent).
-    ctx.strokeStyle = 'rgba(120,200,255,0.7)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 3]);
-    this.#strokePolyline(ctx, t, center);
-    ctx.setLineDash([]);
+    // Driven trail — the bright path, coloured by pit state, contiguous in time.
+    this.#strokeTrail(ctx, t, trail);
+
+    // Start/finish line (perpendicular to the crossing heading).
+    if (model.startFinish) this.#strokeStartFinish(ctx, t, model.startFinish);
+
+    // Pit-stop start markers.
+    for (const m of model.pitMarks) {
+      const s = t.project(m.x, m.z);
+      ctx.fillStyle = 'rgba(224,179,65,0.95)';
+      ctx.fillRect(s.px - 3.5, s.py - 3.5, 7, 7);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.strokeRect(s.px - 3.5, s.py - 3.5, 7, 7);
+    }
+
+    // Off-track markers (toggleable).
+    if (this.#offVisible) {
+      ctx.strokeStyle = 'rgba(255,70,70,0.95)';
+      ctx.lineWidth = 2;
+      for (const m of model.offMarks) {
+        const s = t.project(m.x, m.z);
+        const r = 3;
+        ctx.beginPath();
+        ctx.moveTo(s.px - r, s.py - r);
+        ctx.lineTo(s.px + r, s.py + r);
+        ctx.moveTo(s.px + r, s.py - r);
+        ctx.lineTo(s.px - r, s.py + r);
+        ctx.stroke();
+      }
+    }
 
     // Live car marker.
     if (Number.isFinite(this.#car.x) && Number.isFinite(this.#car.z)) {
@@ -438,6 +644,46 @@ export class TrackMap {
       ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.stroke();
     }
+  }
+
+  /**
+   * Stroke the ordered trail, switching colour between normal driving and pit
+   * segments. Points are contiguous in time, so no gap-breaking is needed.
+   */
+  #strokeTrail(ctx, t, trail) {
+    if (trail.length < 2) return;
+    ctx.lineWidth = 2;
+    let i = 0;
+    while (i < trail.length - 1) {
+      const segPit = trail[i + 1].pit === true;
+      ctx.strokeStyle = segPit ? 'rgba(224,179,65,0.95)' : 'rgba(70,200,255,0.95)';
+      ctx.beginPath();
+      const s0 = t.project(trail[i].x, trail[i].z);
+      ctx.moveTo(s0.px, s0.py);
+      let j = i + 1;
+      while (j < trail.length && (trail[j].pit === true) === segPit) {
+        const s = t.project(trail[j].x, trail[j].z);
+        ctx.lineTo(s.px, s.py);
+        j++;
+      }
+      ctx.stroke();
+      i = j - 1;
+    }
+  }
+
+  /** Draw the start/finish line as a short bar across the track at the crossing. */
+  #strokeStartFinish(ctx, t, sf) {
+    const px = -sf.hz, pz = sf.hx; // perpendicular to heading
+    const a = t.project(sf.x + px * SF_HALF_WIDTH_M, sf.z + pz * SF_HALF_WIDTH_M);
+    const b = t.project(sf.x - px * SF_HALF_WIDTH_M, sf.z - pz * SF_HALF_WIDTH_M);
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([3, 2]);
+    ctx.beginPath();
+    ctx.moveTo(a.px, a.py);
+    ctx.lineTo(b.px, b.py);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   /**
