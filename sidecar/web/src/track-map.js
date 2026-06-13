@@ -28,10 +28,10 @@ const TRAIL_DECIMATE_M = 2.0;
 const MAX_POINTS = 12000;
 /** Cap on the visible trail ring buffer. */
 const MAX_TRAIL = 8000;
-/** A drop in dist_m larger than this (metres) signals a new lap/session/track. */
+/** A backward dist_m jump this large (metres) is a replay-loop / session restart. */
 const DIST_RESET_M = 50;
-/** A smaller backward dist_m step than DIST_RESET_M is treated as a rewind. */
-const REWIND_EPS_M = 1.0;
+/** Any backward dist_m step larger than this (metres) is treated as a rewind. */
+const REWIND_EPS_M = 0.3;
 /** Movement/dist below this (metres) between frames is treated as paused. */
 const PAUSE_EPS_M = 0.05;
 /** Don't connect centreline/edge nodes across a station-index gap wider than this. */
@@ -108,6 +108,27 @@ function rewindTrail(model, dist) {
 }
 
 /**
+ * Handle a genuine start/finish crossing (a lap-number increment). Capture the
+ * crossing geometry and start a fresh visible trail, but keep the cross-lap
+ * edge envelope (station means) so it sharpens over successive laps. The very
+ * first crossing discards the partial connect-in lap and anchors station 0.
+ */
+function onLapBoundary(model, x, z, dist, lap) {
+  const sf = computeStartFinish(model, x, z);
+  if (!model.anchored) {
+    resetModel(model);
+    model.anchored = true;
+  }
+  model.startFinish = sf;
+  model.trail = [];
+  model.lastTrailX = null;
+  model.lastTrailZ = null;
+  model.lapStartDist = dist;
+  model.lapNumber = lap;
+  model.lastDist = dist;
+}
+
+/**
  * Fold one telemetry sample into the model.
  *
  * Station 0 is anchored to the track's start/finish line so the same physical
@@ -139,29 +160,24 @@ export function accumulate(model, s) {
     model.trackOrdinal = track;
   }
 
-  const backwardJump = model.lastDist != null && dist < model.lastDist - DIST_RESET_M;
-  const lapChange = lap != null && model.lapNumber != null && lap !== model.lapNumber;
-  const boundary = backwardJump || lapChange;
+  const backward = model.lastDist != null && dist < model.lastDist - REWIND_EPS_M;
+  const lapIncreased =
+    lap != null && model.lapNumber != null && lap > model.lapNumber;
 
-  if (boundary) {
-    const sf = computeStartFinish(model, x, z);
-    if (!model.anchored) {
-      // First real start/finish crossing: throw away the partial-lap stations
-      // (numbered from wherever we connected) and anchor cleanly from here.
-      resetModel(model);
-      model.anchored = true;
+  if (lapIncreased && !backward) {
+    // Genuine start/finish crossing. DistanceTraveled is cumulative across laps,
+    // so a real new lap moves forward; only rewinds/restarts jump backward.
+    onLapBoundary(model, x, z, dist, lap);
+    // Fall through to record the first sample of the new lap.
+  } else if (backward) {
+    // Rewind, replay-loop restart, or session restart. Retract the visible trail
+    // to the rewound distance while keeping the cross-lap envelope and its
+    // station origin (lapStartDist) stable — re-anchoring the origin mid-session
+    // is what made the inferred edges "spider-web". A large jump back to the lap
+    // start (loop / restart) additionally refreshes the start/finish crossing.
+    if (dist < model.lastDist - DIST_RESET_M) {
+      model.startFinish = computeStartFinish(model, x, z);
     }
-    model.startFinish = sf;
-    // Start a fresh visible trail for the new lap.
-    model.trail = [];
-    model.lastTrailX = null;
-    model.lastTrailZ = null;
-    model.lapStartDist = dist;
-    model.lapNumber = lap ?? model.lapNumber;
-    model.lastDist = dist;
-    // Fall through to record this first point of the new lap.
-  } else if (model.lastDist != null && dist < model.lastDist - REWIND_EPS_M) {
-    // Rewind: retract the drawn trail; don't accumulate the backwards motion.
     rewindTrail(model, dist);
     model.lastDist = dist;
     return model;
@@ -204,10 +220,14 @@ export function accumulate(model, s) {
     if (model.points.length > MAX_POINTS) model.points.shift();
   }
 
-  // Visible ordered trail (the bright drawn path).
+  // Visible ordered trail (the bright drawn path). Keep it strictly forward in
+  // distance so a sub-threshold backward drift can never fold the line back on
+  // itself.
+  const lastTrail = model.trail[model.trail.length - 1];
   if (
-    model.lastTrailX == null ||
-    Math.hypot(x - model.lastTrailX, z - model.lastTrailZ) >= TRAIL_DECIMATE_M
+    (lastTrail == null || dist >= lastTrail.dist) &&
+    (model.lastTrailX == null ||
+      Math.hypot(x - model.lastTrailX, z - model.lastTrailZ) >= TRAIL_DECIMATE_M)
   ) {
     model.trail.push({ x, z, dist, pit });
     model.lastTrailX = x;

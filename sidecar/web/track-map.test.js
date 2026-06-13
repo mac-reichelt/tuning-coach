@@ -227,6 +227,44 @@ describe('trail, rewind, pause, pit', () => {
     expect(m.trail[m.trail.length - 1].dist).toBeLessThanOrEqual(15);
   });
 
+  it('keeps the envelope origin stable across a large rewind (no spider-web)', () => {
+    const m = createModel();
+    // Drive a straight lap; the inferred centreline should be monotonic in x.
+    for (let d = 0; d <= 120; d += 3) {
+      accumulate(m, { x: d, z: 0, dist: d, lap: 1, track: 1 });
+    }
+    const startDist = m.lapStartDist;
+    const stationCount = centerline(m).length;
+    const peak = m.trail.length;
+    // A >50 m backwards jump (Forza rewind / replay loop): retract, don't re-anchor.
+    accumulate(m, { x: 60, z: 0, dist: 60, lap: 1, track: 1 });
+    expect(m.trail.length).toBeLessThan(peak); // trail retracted
+    expect(m.lapStartDist).toBe(startDist); // station origin unchanged
+    expect(m.lapNumber).toBe(1); // not mistaken for a new lap
+    // Re-drive the same line; stations must not gain a wrong-origin twin.
+    for (let d = 63; d <= 120; d += 3) {
+      accumulate(m, { x: d, z: 0, dist: d, lap: 1, track: 1 });
+    }
+    const cl = centerline(m);
+    expect(cl.length).toBe(stationCount); // no spurious mixed-origin stations
+    for (let i = 1; i < cl.length; i++) {
+      // A corrupted origin would pull a station's mean far off, breaking order.
+      expect(cl[i].x).toBeGreaterThan(cl[i - 1].x);
+    }
+  });
+
+  it('refreshes the start/finish line on a large backwards jump (loop restart)', () => {
+    const m = createModel();
+    for (let d = 0; d <= 120; d += 3) {
+      accumulate(m, { x: d, z: 0, dist: d, lap: 1, track: 1 });
+    }
+    expect(m.startFinish).toBeNull();
+    // Replay loops back to the capture start: >50 m backwards jump.
+    accumulate(m, { x: 0, z: 0, dist: 0, lap: 1, track: 1 });
+    expect(m.startFinish).not.toBeNull();
+    expect(Number.isFinite(m.startFinish.hx)).toBe(true);
+  });
+
   it('holds the trail while paused (no movement)', () => {
     const m = createModel();
     drive(m, { to: 30 });
