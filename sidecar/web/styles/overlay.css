@@ -512,6 +512,7 @@ html, body {
 
 #telemetry-status[data-state="none"]   { border-color: var(--color-muted); }
 #telemetry-status[data-state="live"]   { border-color: var(--color-success); }
+#telemetry-status[data-state="replay"] { border-color: var(--color-accent); }
 #telemetry-status[data-state="paused"] { border-color: var(--color-warning); }
 
 .ts-dot {
@@ -527,6 +528,11 @@ html, body {
 
 #telemetry-status[data-state="live"]   .ts-dot {
   background: var(--color-success);
+  animation: pulse 1.2s infinite;
+}
+
+#telemetry-status[data-state="replay"] .ts-dot {
+  background: var(--color-accent);
   animation: pulse 1.2s infinite;
 }
 

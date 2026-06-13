@@ -246,6 +246,7 @@ pub(crate) struct AppState {
     dyno_tx: broadcast::Sender<Value>,
     dyno_reset_tx: broadcast::Sender<()>,
     telemetry_hz: u16,
+    replay: bool,
 }
 
 impl AppState {
@@ -342,6 +343,9 @@ struct HelloMessage<'a> {
     r#type: &'static str,
     schema_version: u16,
     sidecar_version: &'a str,
+    /// True when telemetry is sourced from a packet-capture replay rather than
+    /// a live UDP feed, so the overlay can label the status indicator.
+    replay: bool,
 }
 
 #[derive(Serialize)]
@@ -441,6 +445,7 @@ async fn run_server(config: AppConfig) -> anyhow::Result<()> {
         dyno_tx: broadcast::channel(64).0,
         dyno_reset_tx: broadcast::channel(16).0,
         telemetry_hz: config.telemetry_hz,
+        replay: config.replay_file.is_some(),
     };
 
     let app = Router::new()
@@ -652,6 +657,7 @@ async fn ws_connection_loop(mut socket: WebSocket, state: AppState) {
         r#type: "hello",
         schema_version: SCHEMA_VERSION,
         sidecar_version: env!("CARGO_PKG_VERSION"),
+        replay: state.replay,
     };
     match serde_json::to_string(&hello) {
         Ok(payload) => {
@@ -1458,6 +1464,7 @@ mod tests {
             r#type: "hello",
             schema_version: SCHEMA_VERSION,
             sidecar_version: "0.1.0",
+            replay: false,
         };
         let serialized = serde_json::to_value(hello).expect("serialize hello");
         assert_eq!(
@@ -1465,7 +1472,8 @@ mod tests {
             json!({
                 "type": "hello",
                 "schema_version": 1,
-                "sidecar_version": "0.1.0"
+                "sidecar_version": "0.1.0",
+                "replay": false
             })
         );
     }

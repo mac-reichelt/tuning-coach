@@ -58,8 +58,8 @@
     import { WsClient }           from './src/ws-client.js';
     import { TelemetryHud }       from './src/telemetry-hud.js?v=20260525-6';
     import { LapStatus }          from './src/lap-status.js?v=20260525-6';
-    import { RecommendationSlot } from './src/recommendation-slot.js?v=20260525-6';
-    import { TelemetryStatus }    from './src/telemetry-status.js?v=20260525-6';
+    import { RecommendationSlot } from './src/recommendation-slot.js?v=20260613-1';
+    import { TelemetryStatus }    from './src/telemetry-status.js?v=20260613-1';
     import { RawTelemetryPanel }  from './src/raw-telemetry.js?v=20260525-8';
     import { DynoGraph }          from './src/dyno-graph.js?v=20260525-8';
 
@@ -100,9 +100,13 @@
       setConnectionState(ev.detail.state);
     });
 
-    // Apply user preferences from hello/session_started if present
-    client.addEventListener('hello', (ev) => {
-      // Future: read preferred speed unit from ev.detail.user_preferences
+    // Apply user preferences / source info from the hello envelope.
+    // hello is a flat envelope ({ type, schema_version, sidecar_version,
+    // replay }) with no `data` field, so read it off the raw message event.
+    client.addEventListener('message', (ev) => {
+      if (ev.detail?.type === 'hello') {
+        tsIndicator.setReplay(ev.detail.replay === true);
+      }
     });
 
     client.addEventListener('telemetry', (ev) => {

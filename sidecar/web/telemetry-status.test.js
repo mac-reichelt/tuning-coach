@@ -66,6 +66,38 @@ describe('TelemetryStatus', () => {
     expect(el.querySelector('.ts-text').textContent).toBe('Paused');
   });
 
+  // ── Replay mode ───────────────────────────────────────────────
+
+  it('update(true) after setReplay(true) shows Replay', () => {
+    ts.setReplay(true);
+    ts.update(true);
+    expect(el.dataset.state).toBe('replay');
+    expect(el.querySelector('.ts-text').textContent).toBe('Replay');
+  });
+
+  it('update(false) in replay mode still shows Paused', () => {
+    ts.setReplay(true);
+    ts.update(false);
+    expect(el.dataset.state).toBe('paused');
+    expect(el.querySelector('.ts-text').textContent).toBe('Paused');
+  });
+
+  it('setReplay(true) relabels an already-live indicator to Replay', () => {
+    ts.update(true);
+    expect(el.dataset.state).toBe('live');
+    ts.setReplay(true);
+    expect(el.dataset.state).toBe('replay');
+    expect(el.querySelector('.ts-text').textContent).toBe('Replay');
+  });
+
+  it('setReplay(false) reverts a replay indicator to Live', () => {
+    ts.setReplay(true);
+    ts.update(true);
+    ts.setReplay(false);
+    expect(el.dataset.state).toBe('live');
+    expect(el.querySelector('.ts-text').textContent).toBe('Live');
+  });
+
   // ── Stale timer ───────────────────────────────────────────────
 
   it('reverts to none after exactly 3 000 ms without an update', () => {

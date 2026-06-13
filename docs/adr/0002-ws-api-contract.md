@@ -202,11 +202,16 @@ Mandatory per architect cross-cutting standards:
 {
   "type": "hello",
   "schema_version": 1,
-  "sidecar_version": "0.1.0"
+  "sidecar_version": "0.1.0",
+  "replay": false
 }
 ```
 
 It is sent exactly once at connect-time before any other frame.
+
+`replay` is `true` when telemetry is sourced from a packet-capture replay
+(`--replay`) rather than a live UDP feed, letting the overlay label its status
+indicator accordingly. The field is additive (no `schema_version` bump).
 
 ### `telemetry` (server → client)
 
