@@ -20,7 +20,7 @@ security-review) handle workflow.
 
 | Component | Tech | Path |
 |-----------|------|------|
-| Sidecar | Rust 2024 edition, tokio async, axum HTTP/WS | `sidecar/` |
+| Sidecar | Rust 2021 edition (MSRV 1.80), tokio async, axum HTTP/WS | `sidecar/` |
 | SimHub dashboard | SimHub-importable `.djson` bundle | `simhub/` |
 | Web frontend | Vanilla HTML/CSS/JS (served by sidecar) | `sidecar/web/` |
 | Storage | SQLite via `rusqlite` (sidecar-owned) | `sidecar/data/` |
@@ -54,10 +54,15 @@ See `docs/adr/` for architecture decisions.
 
 ### Rust (sidecar)
 
-- Edition 2024, MSRV pinned in `Cargo.toml`
-- `cargo fmt --check` + `cargo clippy --workspace --all-targets -- -D warnings`
-- Tests: `cargo test --workspace` — use `insta` for snapshot, `proptest` for
-  parsers
+- Edition 2021, `rust-version = "1.80"` pinned in `sidecar/Cargo.toml` (CI uses
+  stable toolchain). Run all `cargo` commands from `sidecar/`.
+- `cargo fmt --all --check` + `cargo clippy --workspace --all-targets -- -D warnings`
+- Tests: `cargo test --workspace --all-features` (matches CI). Run a **single
+  test** with `cargo test --workspace <test_name>` or a module with
+  `cargo test telemetry::tests`. Use `insta` for snapshot (review with
+  `cargo insta review`), `proptest` for parsers.
+- On Linux, the build needs system deps: `pkg-config libssl-dev libsqlite3-dev
+  tesseract-ocr libtesseract-dev libleptonica-dev`.
 - Errors: `thiserror` for library errors, `anyhow` for binary main
 - Logging: `tracing` + `tracing-subscriber`; structured (JSON in release)
 - Config: `figment` (env > file > defaults), validated at startup
@@ -67,10 +72,15 @@ See `docs/adr/` for architecture decisions.
 
 ### JS (web frontend)
 
-- Vanilla — no build step for the web frontend itself
+- Vanilla — no build step for the web frontend itself. Source lives in
+  `sidecar/web/src/` (ES modules); tests are `*.test.js` colocated in
+  `sidecar/web/`.
 - ES modules, top-level await OK (modern browsers / SimHub uses Chromium)
-- Lint: `eslint` (flat config) + `prettier`
-- Tests: `vitest` for any non-trivial logic
+- Tests: `vitest` (jsdom). From `sidecar/web/`: `npm ci` then `npm test`
+  (= `vitest run`). Single file: `npx vitest run dyno-graph.test.js`; single
+  test: `npx vitest run -t "<name>"`. Coverage: `npm run coverage`.
+- CI runs `npm run lint --if-present` — there is **no** eslint/prettier config
+  today, so lint is currently a no-op. Add the tooling before relying on it.
 - DOM-only, no framework — frontend is render-only
 
 ### Docs
@@ -108,6 +118,13 @@ See `docs/adr/` for architecture decisions.
 | `.github/release-please-config.json` | release-please monorepo config |
 
 ## Agent Routing
+
+> **Note on paths:** the sidecar is currently flat — `sidecar/src/` holds
+> `telemetry.rs`, `recommendation.rs`, `storage.rs`, `session_state.rs`,
+> `lap_validity.rs`, `hotkeys.rs`, `overlay.rs`, `main.rs`. The globs below
+> (e.g. `heuristics/**`, `recommendations/**`, `forza_*.rs`) include
+> not-yet-created paths; match against the closest existing file
+> (`telemetry.rs` for Forza packets, `recommendation.rs` for tuning logic).
 
 Before implementing any changes, identify which agents match the files you
 plan to touch using the routing matrix below. Read those agent files before
@@ -151,8 +168,7 @@ the checks can be required in branch protection without blocking unrelated work.
 
 ## Plan & Roadmap
 
-The full project plan with phased roadmap lives in `docs/PLAN.md` (TBD — see
-the producer's open issues for the phase 1 backlog).
+The full project plan with phased roadmap lives in `docs/PLAN.md`.
 
 ## Related
 
