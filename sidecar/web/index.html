@@ -31,6 +31,7 @@
     <div id="overlay-buttons">
       <button id="hud-toggle" aria-label="Toggle telemetry HUD">HUD</button>
       <button id="dyno-toggle" aria-label="Toggle dyno panel">Dyno</button>
+      <button id="coach-toggle" aria-label="Toggle coach recommendations">Coach</button>
       <button id="raw-toggle" aria-label="Toggle raw telemetry data">Raw Data</button>
     </div>
   </div>
@@ -158,6 +159,14 @@
 
     document.getElementById('dyno-toggle').addEventListener('click', () => {
       dynoGraph.toggle();
+    });
+
+    // ── Coach toggle ─────────────────────────────────────────
+    // Lets the user reopen the recommendation panel after dismissing or
+    // snoozing it, so it can never be permanently lost.
+
+    document.getElementById('coach-toggle').addEventListener('click', () => {
+      slot.toggle();
     });
 
     // ── Start ────────────────────────────────────────────────

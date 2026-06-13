@@ -59,6 +59,12 @@ export class RecommendationSlot {
   /** @type {Array<object>} */
   #historyItems = [];
 
+  /** @type {ReturnType<typeof setTimeout> | null} Pending snooze re-show timer. */
+  #snoozeTimer = null;
+
+  /** Snooze duration: hide the panel, then auto-restore after this many ms. */
+  static #SNOOZE_MS = 60_000;
+
   /** @type {number} Maximum number of history items to retain. */
   static #MAX_HISTORY = 20;
 
@@ -87,14 +93,51 @@ export class RecommendationSlot {
     this.showPlaceholder();
   }
 
-  /** Slide the panel into view. */
+  /** Slide the panel into view. Cancels any pending snooze. */
   show() {
+    this.#clearSnooze();
     this.#root.classList.add('visible');
   }
 
   /** Slide the panel out of view. */
   hide() {
     this.#root.classList.remove('visible');
+  }
+
+  /** Whether the panel is currently visible. */
+  isVisible() {
+    return this.#root.classList.contains('visible');
+  }
+
+  /** Toggle visibility (used by the Coach overlay button). */
+  toggle() {
+    if (this.isVisible()) {
+      this.hide();
+    } else {
+      this.show();
+    }
+  }
+
+  /**
+   * Temporarily hide the panel, then automatically restore it after `ms`.
+   * Unlike dismiss (which stays hidden until reopened), snooze guarantees the
+   * coach reappears so it is never lost.
+   * @param {number} [ms]  Snooze duration in milliseconds.
+   */
+  snooze(ms = RecommendationSlot.#SNOOZE_MS) {
+    this.hide();
+    this.#clearSnooze();
+    this.#snoozeTimer = setTimeout(() => {
+      this.#snoozeTimer = null;
+      this.#root.classList.add('visible');
+    }, ms);
+  }
+
+  #clearSnooze() {
+    if (this.#snoozeTimer !== null) {
+      clearTimeout(this.#snoozeTimer);
+      this.#snoozeTimer = null;
+    }
   }
 
   /** Render the placeholder card (no active recommendation). */
@@ -171,8 +214,7 @@ export class RecommendationSlot {
       if (action === 'dismiss') {
         this.hide();
       } else if (action === 'snooze') {
-        // Phase 7: send snooze message to sidecar
-        this.hide();
+        this.snooze();
       } else if (action === 'history') {
         this.#toggleHistory();
       }

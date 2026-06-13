@@ -283,9 +283,10 @@ html, body {
 .hud-lap-delta--negative { color: var(--color-success); }
 .hud-lap-delta--neutral  { color: var(--color-muted); }
 
-/* HUD / Dyno toggle buttons — live beside #raw-toggle in top-right */
+/* HUD / Dyno / Coach toggle buttons — live beside #raw-toggle in top-right */
 #hud-toggle,
-#dyno-toggle {
+#dyno-toggle,
+#coach-toggle {
   background: rgba(255,255,255,0.08);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -302,7 +303,8 @@ html, body {
 }
 
 #hud-toggle:hover,
-#dyno-toggle:hover { background: rgba(255,255,255,0.18); border-color: var(--color-accent); }
+#dyno-toggle:hover,
+#coach-toggle:hover { background: rgba(255,255,255,0.18); border-color: var(--color-accent); }
 
 /* ── Lap-status badge ──────────────────────────────────────── */
 
