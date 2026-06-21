@@ -26,7 +26,7 @@ jobs:
       run:
         working-directory: sidecar
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
@@ -73,7 +73,7 @@ jobs:
       run:
         working-directory: sidecar/web
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Skip if no package.json
         id: check
